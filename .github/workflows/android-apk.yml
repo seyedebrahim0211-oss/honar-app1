@@ -26,6 +26,8 @@ jobs:
         shell: bash
         run: |
           flutter create --platforms android --project-name jan_fada --org ir.honarmardomi .
+          # Remove template test; project tests cover the actual application.
+          rm -f test/widget_test.dart
           python3 - <<'PY'
           from pathlib import Path
           manifest=Path('android/app/src/main/AndroidManifest.xml')
