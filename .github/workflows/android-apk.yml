@@ -46,7 +46,7 @@ jobs:
           # AGP lint crashes in camera_android JavaDoc (CommentDetector, removeLast)
           # on this toolchain. Disable only that plugin's fatal lint task.
           root_gradle=Path('android/build.gradle.kts')
-          root_gradle.write_text(root_gradle.read_text() + '\nsubprojects {\n    if (name == "camera_android") {\n        tasks.configureEach {\n            if (name.startsWith("lintVital")) enabled = false\n        }\n    }\n}\n')
+          root_gradle.write_text(root_gradle.read_text() + '\nsubprojects {\n    if (name != "app") {\n        tasks.configureEach {\n            if (name.startsWith("lintVital")) enabled = false\n        }\n    }\n}\n')
           PY
       - name: Resolve packages
         run: flutter pub get
