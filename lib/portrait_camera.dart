@@ -90,7 +90,7 @@ class _PortraitCameraState extends State<PortraitCamera> with WidgetsBindingObse
     try {
       // NV21 is required by ML Kit for CameraImage byte streams on Android.
       final format = InputImageFormatValue.fromRawValue(frame.format.raw);
-      if (format != InputImageFormat.nv21 || frame.planes.length != 1) {
+      if (format == null || format != InputImageFormat.nv21 || frame.planes.length != 1) {
         _update(false, 'فرمت تصویر این دوربین برای تحلیل زنده پشتیبانی نمی‌شود.');
         return;
       }
