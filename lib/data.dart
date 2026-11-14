@@ -273,6 +273,7 @@ class DossierExporter {
     await xlsx.writeAsBytes(output, flush: true);
     bundle.addFile(ArchiveFile('janfada_$now.xlsx', output.length, output));
     final zipBytes = ZipEncoder().encode(bundle);
+    if (zipBytes == null) throw StateError('ایجاد بسته خروجی ناموفق بود.');
     final zip = File(p.join(dir.path, 'janfada_$now.zip'));
     await zip.writeAsBytes(zipBytes, flush: true);
     return ExportedFiles(xlsx: xlsx, zip: zip);
