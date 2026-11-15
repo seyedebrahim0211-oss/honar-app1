@@ -83,11 +83,11 @@ jobs:
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk public-downloads/JanFada-Android-ARM64.apk
           cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk public-downloads/JanFada-Android-ARM32.apk
           sha256sum public-downloads/*.apk | tee public-downloads/SHA256SUMS.txt
-          tag="janfada-v1.1.0-phone-otp"
-          notes="نسخه آزمایشی جان‌فدا ۱.۱ با ورود پیامکی مسئولان مجاز و ثبت‌نام آفلاین/آنلاین. APKها از خروجی موفق GitHub Actions ساخته شده‌اند؛ دوربین، همگام‌سازی و پیامک روی گوشی واقعی هنوز نیاز به آزمون دارند. این نسخه با امضای آزمایشی ساخته شده است و برای بروزرسانی پایدار باید از کلید انتشار ثابت استفاده شود."
+          tag="janfada-v1.2.0-smart-camera"
+          notes="جان فدا | وارثین ۱.۲ با دوربین هوشمند، درصد وضوح، راهنمای عکس، ورود پیامکی و فرم ساده‌شده. APKها از خروجی موفق GitHub Actions ساخته شده‌اند؛ دوربین، همگام‌سازی و پیامک روی گوشی واقعی هنوز نیاز به آزمون دارند. این نسخه با امضای آزمایشی ساخته شده است و برای بروزرسانی پایدار باید از کلید انتشار ثابت استفاده شود."
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" public-downloads/* --clobber
           else
-            gh release create "$tag" public-downloads/* --target "$GITHUB_SHA" --title "جان‌فدا ۱.۱ — ورود پیامکی و دانلود اندروید" --notes "$notes" --prerelease
+            gh release create "$tag" public-downloads/* --target "$GITHUB_SHA" --title "جان فدا | وارثین ۱.۲ — دوربین هوشمند و ثبت‌نام آفلاین" --notes "$notes" --prerelease
           fi
           gh release view "$tag" --json url,assets --jq '{url:.url,assets:[.assets[].name]}'
