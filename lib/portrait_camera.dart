@@ -233,74 +233,204 @@ class _PortraitCameraState extends State<PortraitCamera> with WidgetsBindingObse
     super.dispose();
   }
 
+  Widget _chip(IconData icon, String title, bool ok) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+    decoration: BoxDecoration(
+      color: ok ? const Color(0xFFE3F3E9) : const Color(0xFFF0EAE0),
+      borderRadius: BorderRadius.circular(12)),
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 16, color: ok ? const Color(0xFF117847) : const Color(0xFF9B7E4A)),
+      const SizedBox(width: 4),
+      Text(title, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
+        color: ok ? const Color(0xFF135443) : const Color(0xFF625949))),
+      const SizedBox(width: 4),
+      Icon(ok ? Icons.check_circle : Icons.radio_button_unchecked, size: 14,
+        color: ok ? const Color(0xFF168D54) : Colors.grey),
+    ]),
+  );
+
   @override Widget build(BuildContext context) {
     final cam = _controller;
     return Scaffold(
-      backgroundColor: const Color(0xFF0D2322),
-      appBar: AppBar(title: const Text('دوربین هوشمند جان‌فدا'),
-        backgroundColor: const Color(0xFF0D2322), foregroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF8F2E9),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFFF8F2E9),
+        foregroundColor: const Color(0xFF0B4D40),
+        centerTitle: true,
+        title: const Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('جان فدا | وارثین', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+          Text('دوربین هوشمند ثبت چهره', style: TextStyle(fontSize: 11)),
+        ]),
         actions: [IconButton(tooltip: 'تعویض دوربین', onPressed: _switch,
           icon: const Icon(Icons.cameraswitch_outlined))]),
-      body: SafeArea(child: Column(children: [
-        Expanded(child: Container(
-          margin: const EdgeInsets.all(12), clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(color: Colors.black,
-            borderRadius: BorderRadius.circular(22)),
-          child: Stack(fit: StackFit.expand, children: [
-            if (cam != null && cam.value.isInitialized)
-              Center(child: CameraPreview(cam))
-            else const Center(child: CircularProgressIndicator(color: Color(0xFFC6A15A))),
-            IgnorePointer(child: CustomPaint(painter: _PortraitOverlay(ready: _ready))),
-            Positioned(top: 14, right: 12, left: 12,
-              child: Center(child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(color: Colors.black.withValues(alpha: .62), borderRadius: BorderRadius.circular(25)),
-                child: const Text('صورت روبه‌رو • بدون عینک تیره • نور یکنواخت',
-                  style: TextStyle(color: Colors.white, fontSize: 12))))),
-          ]),
-        )),
-        Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-          child: AnimatedContainer(duration: const Duration(milliseconds: 220),
-            width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            decoration: BoxDecoration(color: _ready ? const Color(0xFF147D48) : const Color(0xFF483A2B),
-              borderRadius: BorderRadius.circular(15)),
-            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(_ready ? Icons.check_circle : Icons.face_outlined, color: Colors.white),
-              const SizedBox(width: 9),
-              Flexible(child: Text(_message, textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700))),
-            ]))),
-        Padding(padding: const EdgeInsets.fromLTRB(22, 5, 22, 22),
-          child: SizedBox(width: double.infinity, child: FilledButton.icon(
-            onPressed: _ready && !_taking ? _capture : null,
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF188452),
-              disabledBackgroundColor: Colors.grey.shade700,
-              padding: const EdgeInsets.symmetric(vertical: 15)),
-            icon: _taking ? const SizedBox(width: 20, height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+      body: SafeArea(child: LayoutBuilder(builder: (context, limits) {
+        final compact = limits.maxHeight < 660;
+        return Column(children: [
+          Expanded(child: Container(
+            margin: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: const Color(0xFF132D28),
+              borderRadius: BorderRadius.circular(20)),
+            child: Stack(fit: StackFit.expand, children: [
+              if (cam != null && cam.value.isInitialized)
+                Center(child: CameraPreview(cam))
+              else const Center(child: CircularProgressIndicator(color: Color(0xFFCAA865))),
+              IgnorePointer(child: CustomPaint(
+                painter: _PortraitOverlay(ready: _ready, score: _qualityPercent))),
+              Positioned(top: 10, right: 10, left: 10, child: Align(
+                alignment: Alignment.centerRight,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: .70),
+                    borderRadius: BorderRadius.circular(20)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.auto_awesome_outlined, size: 16,
+                      color: _ready ? const Color(0xFF4BEE8A) : const Color(0xFFD8B66E)),
+                    const SizedBox(width: 6),
+                    const Text('سنجش زنده کیفیت چهره',
+                      style: TextStyle(color: Colors.white, fontSize: 11)),
+                  ]),
+                ),
+              )),
+              Positioned(bottom: 10, right: 10, left: 10, child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: .64),
+                    borderRadius: BorderRadius.circular(12)),
+                  child: const Text('صورت روبه‌روی دوربین، درون بیضی و با نور یکنواخت',
+                    maxLines: 2, textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 11, color: Colors.white)),
+                ),
+              )),
+            ]),
+          )),
+          Padding(padding: const EdgeInsets.fromLTRB(14, 4, 14, 4),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              decoration: BoxDecoration(
+                color: const Color(0xFF075648),
+                borderRadius: BorderRadius.circular(17)),
+              padding: const EdgeInsets.all(12),
+              child: Column(children: [
+                Row(children: [
+                  Icon(_ready ? Icons.check_circle : Icons.face_retouching_natural,
+                    color: _ready ? const Color(0xFF61F49A) : const Color(0xFFE3C281)),
+                  const SizedBox(width: 8),
+                  const Expanded(child: Text('کیفیت تصویر',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800))),
+                  Text('$_qualityPercent٪',
+                    textDirection: TextDirection.ltr,
+                    style: const TextStyle(color: Colors.white,
+                      fontWeight: FontWeight.w900, fontSize: 22)),
+                ]),
+                const SizedBox(height: 8),
+                ClipRRect(borderRadius: BorderRadius.circular(10),
+                  child: LinearProgressIndicator(
+                    minHeight: 9, value: _qualityPercent / 100,
+                    backgroundColor: const Color(0xFF64867A),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      _ready ? const Color(0xFF4CF08D) : const Color(0xFFE4BA6A)),
+                  )),
+                const SizedBox(height: 8),
+                Text(_message, textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white, fontSize: 12)),
+              ]),
+            ),
+          ),
+          Padding(padding: const EdgeInsets.fromLTRB(10, 5, 10, 3),
+            child: Wrap(spacing: 6, runSpacing: 6, alignment: WrapAlignment.center,
+              children: [
+                _chip(Icons.face_outlined, 'چهره شناسایی شد', _faceOk),
+                _chip(Icons.center_focus_strong, 'داخل کادر', _framingOk),
+                _chip(Icons.light_mode_outlined, 'نور مناسب', _lightOk),
+                _chip(Icons.high_quality_outlined, 'تصویر واضح', _sharpOk),
+                _chip(Icons.visibility_outlined, 'نگاه مستقیم', _poseOk),
+              ]),
+          ),
+          Padding(padding: const EdgeInsets.fromLTRB(12, 2, 12, 1),
+            child: TextButton.icon(
+              onPressed: () => setState(() => _guideExpanded = !_guideExpanded),
+              icon: Icon(_guideExpanded ? Icons.expand_less : Icons.tips_and_updates_outlined,
+                size: 19),
+              label: Text(_guideExpanded ? 'بستن راهنمای عکاسی'
+                : 'راهنمای عکاسی: نور ملایم، گوشی ثابت، صورت در کادر'),
+            ),
+          ),
+          if (_guideExpanded) Container(
+            margin: const EdgeInsets.fromLTRB(14, 1, 14, 4),
+            padding: const EdgeInsets.all(10),
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12)),
+            child: Text(
+              '۱. مقابل نور ملایم و یکنواخت بایستید.\n'
+              '۲. صورت را کاملاً در بیضی قرار دهید و مستقیم نگاه کنید.\n'
+              '۳. گوشی را ثابت نگه دارید و در صورت امکان عینک تیره را بردارید.\n'
+              '۴. وقتی رنگ کادر سبز شد و دکمه فعال بود، عکس بگیرید.',
+              style: TextStyle(fontSize: compact ? 10 : 12, height: 1.55,
+                color: const Color(0xFF19483E)),
+            ),
+          ),
+          Padding(padding: const EdgeInsets.fromLTRB(14, 5, 14, 12),
+            child: SizedBox(width: double.infinity, child: FilledButton.icon(
+              onPressed: _ready && !_taking ? _capture : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF08604B),
+                disabledBackgroundColor: const Color(0xFFB5B8B2),
+                padding: const EdgeInsets.symmetric(vertical: 15),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+              icon: _taking
+                ? const SizedBox(width: 20, height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                 : const Icon(Icons.camera_alt_outlined),
-            label: Text(_taking ? 'در حال بررسی عکس…' : 'گرفتن عکس واضح'),
-          ))),
-      ])),
+              label: Text(_taking ? 'در حال بررسی عکس…'
+                : (_ready ? 'گرفتن عکس' : 'تا سبزشدن کامل کادر صبر کنید')),
+            )),
+          ),
+        ]);
+      })),
     );
   }
 }
 
 class _PortraitOverlay extends CustomPainter {
-  const _PortraitOverlay({required this.ready});
+  const _PortraitOverlay({required this.ready, required this.score});
   final bool ready;
+  final int score;
   @override void paint(Canvas canvas, Size size) {
-    final oval = Rect.fromCenter(center: Offset(size.width * 0.5, size.height * 0.47),
-      width: size.width * 0.72, height: math.min(size.height * 0.66, size.width * 1.06));
-    final shade = Path()..addRect(Offset.zero & size)..fillType = PathFillType.evenOdd;
-    shade.addOval(oval);
-    canvas.drawPath(shade, Paint()..color = Colors.black.withValues(alpha: .28));
-    canvas.drawOval(oval, Paint()..style = PaintingStyle.stroke..strokeWidth = 4
-      ..color = ready ? const Color(0xFF25E07B) : const Color(0xFFD9B56C));
-    final center = Offset(size.width / 2, oval.bottom + 20);
-    canvas.drawLine(Offset(center.dx - 32, center.dy), Offset(center.dx + 32, center.dy),
-      Paint()..color = Colors.white70..strokeWidth = 2);
+    final oval = Rect.fromCenter(
+      center: Offset(size.width * .5, size.height * .47),
+      width: size.width * .72,
+      height: math.min(size.height * .66, size.width * 1.06));
+    final mask = Path()..addRect(Offset.zero & size)
+      ..fillType = PathFillType.evenOdd;
+    mask.addOval(oval);
+    canvas.drawPath(mask, Paint()..color = Colors.black.withValues(alpha: .24));
+    canvas.drawOval(oval, Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4.5
+      ..color = const Color(0xAADDCC8A));
+    if (ready) {
+      canvas.drawOval(oval, Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 5
+        ..color = const Color(0xFF47F58A));
+    } else {
+      canvas.drawArc(oval, -math.pi / 2, math.pi * 2 * (score / 100),
+        false, Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = 5
+          ..color = score >= 75 ? const Color(0xFF79DA88)
+            : const Color(0xFFDDAD57));
+    }
   }
-  @override bool shouldRepaint(covariant _PortraitOverlay old) => old.ready != ready;
+  @override bool shouldRepaint(covariant _PortraitOverlay old) =>
+    old.ready != ready || old.score != score;
 }
 
 class FrameQuality {
