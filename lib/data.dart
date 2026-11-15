@@ -158,7 +158,24 @@ class FormSync {
           final req = http.MultipartRequest('POST', Uri.parse(submitUrl));
           req.headers.addAll(authHeaders);
           for (final entry in record.data.entries) {
-            if (entry.key != 'consent' && entry.key != 'activity') req.fields[entry.key] = entry.value;
+            if (entry.key != 'consent' && entry.key != 'activity' &&
+                entry.key != 'birth_date' && entry.value.trim().isNotEmpty) {
+              req.fields[entry.key] = entry.value;
+            }
+          }
+          // Upgrade earlier offline records that stored a single Jalali date.
+          if (!req.fields.containsKey('birth_year')) {
+            final parts = (record.data['birth_date'] ?? '').split('/');
+            const months = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور',
+              'مهر','آبان','آذر','دی','بهمن','اسفند'];
+            if (parts.length == 3) {
+              final m = int.tryParse(parts[1]);
+              if (m != null && m >= 1 && m <= 12) {
+                req.fields['birth_year'] = parts[0];
+                req.fields['birth_month'] = months[m - 1];
+                req.fields['birth_day'] = parts[2].padLeft(2, '0');
+              }
+            }
           }
           req.fields['consent[0]'] = consentValue;
           final image = await store.readImage(record.photo);
@@ -231,12 +248,25 @@ class DossierExporter {
   DossierExporter(this.store);
   final LocalStore store;
   static const _headers = <String>[
-    'شناسه آفلاین', 'کد نگارفرم', 'وضعیت ارسال', 'نام', 'نام خانوادگی', 'نام پدر',
-    'تلفن همراه', 'تاریخ تولد', 'شهر یا روستا', 'نشانی',
-    'توضیحات', 'عکس در بسته پیوست', 'زمان ثبت',
+    'شناسه آفلاین','کد نگارفرم','وضعیت ارسال','نام','نام خانوادگی',
+    'نام پدر','شماره همراه','کد ملی','تاریخ تولد یکپارچه','سال تولد',
+    'ماه تولد','روز تولد','شهر یا روستا','مدرک تحصیلی',
+    'محل تحصیل','محل کار','وضعیت نظام وظیفه','تخصص و مهارت‌ها',
+    'علاقه‌مندی‌ها','نشانی','توضیحات','عکس در بسته پیوست','زمان ثبت',
   ];
-  static const _fieldKeys = <String>['first_name', 'last_name', 'father_name', 'mobile', 'birth_date', 'city', 'address', 'notes'];
-  static const _fieldLabels = <String>['نام', 'نام خانوادگی', 'نام پدر', 'تلفن همراه', 'تاریخ تولد', 'شهر یا روستا', 'نشانی', 'توضیحات'];
+  static const _fieldKeys = <String>[
+    'first_name','last_name','father_name','mobile','nid','birth_date',
+    'birth_year','birth_month','birth_day','city','education_level',
+    'study_place','work_place','military_status','specialty','interests',
+    'address','notes',
+  ];
+  static const _fieldLabels = <String>[
+    'نام','نام خانوادگی','نام پدر','شماره همراه','کد ملی',
+    'تاریخ تولد (متنی)','سال تولد','ماه تولد','روز تولد',
+    'شهر یا روستا','مدرک تحصیلی','محل تحصیل','محل کار',
+    'وضعیت نظام وظیفه','تخصص و مهارت‌ها','علاقه‌مندی‌ها',
+    'نشانی','توضیحات',
+  ];
   List<CellValue> _cells(Iterable<String> values) => values.map((v) => TextCellValue(v) as CellValue).toList();
 
   Future<ExportedFiles> export() async {
