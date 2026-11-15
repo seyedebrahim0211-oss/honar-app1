@@ -158,7 +158,7 @@ class FormSync {
           final req = http.MultipartRequest('POST', Uri.parse(submitUrl));
           req.headers.addAll(authHeaders);
           for (final entry in record.data.entries) {
-            if (entry.key != 'consent') req.fields[entry.key] = entry.value;
+            if (entry.key != 'consent' && entry.key != 'activity') req.fields[entry.key] = entry.value;
           }
           req.fields['consent[0]'] = consentValue;
           final image = await store.readImage(record.photo);
@@ -232,11 +232,11 @@ class DossierExporter {
   final LocalStore store;
   static const _headers = <String>[
     'شناسه آفلاین', 'کد نگارفرم', 'وضعیت ارسال', 'نام', 'نام خانوادگی', 'نام پدر',
-    'تلفن همراه', 'تاریخ تولد', 'شهر یا روستا', 'نشانی', 'حوزه همکاری',
+    'تلفن همراه', 'تاریخ تولد', 'شهر یا روستا', 'نشانی',
     'توضیحات', 'عکس در بسته پیوست', 'زمان ثبت',
   ];
-  static const _fieldKeys = <String>['first_name', 'last_name', 'father_name', 'mobile', 'birth_date', 'city', 'address', 'activity', 'notes'];
-  static const _fieldLabels = <String>['نام', 'نام خانوادگی', 'نام پدر', 'تلفن همراه', 'تاریخ تولد', 'شهر یا روستا', 'نشانی', 'حوزه همکاری', 'توضیحات'];
+  static const _fieldKeys = <String>['first_name', 'last_name', 'father_name', 'mobile', 'birth_date', 'city', 'address', 'notes'];
+  static const _fieldLabels = <String>['نام', 'نام خانوادگی', 'نام پدر', 'تلفن همراه', 'تاریخ تولد', 'شهر یا روستا', 'نشانی', 'توضیحات'];
   List<CellValue> _cells(Iterable<String> values) => values.map((v) => TextCellValue(v) as CellValue).toList();
 
   Future<ExportedFiles> export() async {
