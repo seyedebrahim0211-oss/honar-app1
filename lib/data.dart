@@ -131,6 +131,14 @@ class LocalStore {
   Future<void> update(Registrant reg) async {
     await _db!.update('registrants', reg.toDb(), where: 'id=?', whereArgs: [reg.id]);
   }
+  Future<bool> isNationalIdDuplicate(String nationalId, {String? excludeId}) async {
+    final digits = nationalId.trim();
+    if (digits.isEmpty) return false;
+    final records = await all();
+    return records.any((r) => r.id != excludeId &&
+      (r.data['nid'] ?? '').trim() == digits);
+  }
+
   Future<bool> isDuplicate(String first, String last, String mobile) async {
     final full = (await all()).where((r) => r.data['first_name'] == first && r.data['last_name'] == last && r.mobile == mobile);
     return full.isNotEmpty;
@@ -222,7 +230,12 @@ class FormSync {
               failed++;
             }
           } else {
-            await store.update(record.updated(status: 'error', error: (decoded['message'] ?? 'خطای سرور ${response.statusCode}').toString()));
+            final errorFields = decoded['errors'];
+            final nationalIdError = errorFields is Map ? errorFields['nid'] : null;
+            final readableError = nationalIdError != null
+              ? 'کد ملی: $nationalIdError'
+              : (decoded['message'] ?? 'خطای سرور ${response.statusCode}').toString();
+            await store.update(record.updated(status: 'error', error: readableError));
             failed++;
             if (response.statusCode == 429 || response.statusCode >= 500) break;
           }
