@@ -11,6 +11,8 @@ import 'package:image/image.dart' as image_lib;
 import 'package:share_plus/share_plus.dart';
 import 'data.dart';
 import 'portrait_camera.dart';
+import 'staff_auth.dart';
+import 'phone_login.dart';
 
 const green = Color(0xFF165F5A);
 const cream = Color(0xFFF8F4EC);
@@ -55,6 +57,7 @@ class _SecureGatewayState extends State<SecureGateway> with WidgetsBindingObserv
   final confirm = TextEditingController();
   String? stored;
   String? error;
+  bool phoneReady = false;
   bool unlocked = false, loading = true, initializing = false;
   int attempts = 0;
   DateTime? backgroundedAt;
@@ -73,7 +76,10 @@ class _SecureGatewayState extends State<SecureGateway> with WidgetsBindingObserv
     super.initState(); WidgetsBinding.instance.addObserver(this); _load();
   }
   Future<void> _load() async {
-    try { stored = await vault.read(key: 'operator_pin_hash_v1'); } catch (_) { error = 'دسترسی به حافظه امن ممکن نیست.'; }
+    try {
+      stored = await vault.read(key: 'operator_pin_hash_v1');
+      phoneReady = (await StaffAuth.instance.token())?.isNotEmpty ?? false;
+    } catch (_) { error = 'دسترسی به حافظه امن ممکن نیست.'; }
     if (mounted) setState(() => loading = false);
   }
   Future<String> _hash(String value, String salt) async {
@@ -110,7 +116,8 @@ class _SecureGatewayState extends State<SecureGateway> with WidgetsBindingObserv
   void dispose() { WidgetsBinding.instance.removeObserver(this); pin.dispose(); confirm.dispose(); super.dispose(); }
   @override
   Widget build(BuildContext context) {
-    if (unlocked) return const Dashboard();
+    if (unlocked) return Dashboard(onSignOut: () { if (mounted) setState(() { unlocked = false; phoneReady = false; }); });
+    if (!loading && !phoneReady) return PhoneLogin(onAuthenticated: () { if (mounted) setState(() => phoneReady = true); });
     return Scaffold(body: SafeArea(child: Center(child: SingleChildScrollView(
       padding: const EdgeInsets.all(25),
       child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 390), child: Column(
@@ -142,12 +149,12 @@ class _SecureGatewayState extends State<SecureGateway> with WidgetsBindingObserv
 }
 
 class Dashboard extends StatefulWidget {
-  const Dashboard({super.key});
+  const Dashboard({super.key, required this.onSignOut});
+  final VoidCallback onSignOut;
   @override State<Dashboard> createState() => _DashboardState();
 }
 class _DashboardState extends State<Dashboard> {
   final store = LocalStore.instance;
-  static const _vault = FlutterSecureStorage();
   late final syncService = FormSync(store);
   StreamSubscription<List<ConnectivityResult>>? internetSubscription;
   Timer? retryTimer;
@@ -171,9 +178,9 @@ class _DashboardState extends State<Dashboard> {
   Future<void> _refresh() async { final list = await store.all(); if (mounted) setState(() => people = list); }
   Future<void> _sync() async {
     if (syncing || !online) return;
-    if ((await _vault.read(key: operatorKeyName) ?? '').length < 40) {
-      if (mounted) await _setOperatorKey();
-      if ((await _vault.read(key: operatorKeyName) ?? '').length < 40) return;
+    if ((await StaffAuth.instance.token() ?? '').isEmpty) {
+      if (mounted) await _phoneLogin();
+      if ((await StaffAuth.instance.token() ?? '').isEmpty) return;
     }
     if (!mounted) return;
     setState(() => syncing = true);
@@ -185,27 +192,39 @@ class _DashboardState extends State<Dashboard> {
     }
   }
   void _info(String message) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message))); }
-  Future<void> _setOperatorKey() async {
+  Future<void> _phoneLogin() async {
     if (!mounted) return;
-    final existing = await _vault.read(key: operatorKeyName) ?? '';
-    final field = TextEditingController(text: existing);
-    final updated = await showDialog<String>(context: context, builder: (ctx) => AlertDialog(
-      title: const Text('اتصال مسئول ثبت‌نام به سایت'),
-      content: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text('کد محرمانه اتصال را از مدیرکل پویش دریافت کنید. این کد فقط در حافظه امن گوشی ذخیره می‌شود.'),
-        const SizedBox(height: 12),
-        TextField(controller: field, textDirection: TextDirection.ltr,
-          decoration: const InputDecoration(labelText: 'کد اتصال مسئول ثبت‌نام'), autocorrect: false),
-      ]),
-      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
-        FilledButton(onPressed: () => Navigator.pop(ctx, field.text.trim()), child: const Text('ذخیره امن'))],
-    ));
-    field.dispose();
-    if (updated == null) return;
-    if (updated.length < 40) { if (mounted) _info('کد اتصال معتبر نیست.'); return; }
-    await _vault.write(key: operatorKeyName, value: updated);
-    if (mounted) _info('کد اتصال ذخیره شد. همگام‌سازی آماده است.');
+    await Navigator.of(context).push<void>(MaterialPageRoute(
+      builder: (loginContext) => PhoneLogin(
+        onAuthenticated: () => Navigator.of(loginContext).pop(),
+      )));
   }
+
+  Future<void> _staffSettings() async {
+    if (!mounted) return;
+    final phone = await StaffAuth.instance.mobile();
+    if (!mounted) return;
+    final action = await showDialog<String>(context: context, builder: (ctx) =>
+      AlertDialog(title: const Text('حساب مسئول ثبت‌نام'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.verified_user_outlined, color: green, size: 42),
+          const SizedBox(height: 10),
+          Text(phone ?? 'ورود انجام نشده است', textDirection: TextDirection.ltr),
+          const SizedBox(height: 12),
+          const Text('دسترسی این شماره توسط مدیر سایت هنر مردمی تعیین می‌شود. رمز اتصال مشترک نیاز نیست.'),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('بستن')),
+          FilledButton.tonal(onPressed: () => Navigator.pop(ctx, 'logout'),
+            child: const Text('خروج و تغییر شماره')),
+        ],
+      ));
+    if (action == 'logout') {
+      await StaffAuth.instance.logout();
+      if (mounted) widget.onSignOut();
+    }
+  }
+
   Future<void> _export() async {
     if (exporting) return;
     setState(() => exporting = true);
@@ -227,7 +246,7 @@ class _DashboardState extends State<Dashboard> {
     return Scaffold(
       appBar: AppBar(title: const Text('جان‌فدا  |  هنر مردمی', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
-          IconButton(onPressed: _setOperatorKey, icon: const Icon(Icons.admin_panel_settings_outlined), tooltip: 'کد اتصال مسئول ثبت‌نام'),
+          IconButton(onPressed: _staffSettings, icon: const Icon(Icons.admin_panel_settings_outlined), tooltip: 'حساب مسئول ثبت‌نام'),
           Padding(padding: const EdgeInsetsDirectional.only(end: 12), child: Tooltip(message: online ? 'شبکه متصل' : 'آفلاین',
             child: Icon(online ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
               color: online ? green : Colors.deepOrange))),
