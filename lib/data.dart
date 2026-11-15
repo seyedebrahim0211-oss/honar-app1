@@ -206,8 +206,7 @@ class FormSync {
             await store.update(record.updated(status: 'synced', code: (decoded['code'] ?? '').toString(), error: ''));
             success++;
           } else if (response.statusCode == 422 && decoded['errors'] is Map &&
-              (decoded['errors'] as Map).containsKey('device_uid') &&
-              (decoded['errors'] as Map).length == 1) {
+              (decoded['errors'] as Map).containsKey('device_uid')) {
             // The first submission may have succeeded but its HTTP reply was lost.
             // Only the authenticated receipt endpoint can confirm the real code.
             final client = http.Client();
@@ -226,7 +225,10 @@ class FormSync {
               await store.update(record.updated(status: 'synced', code: code, error: ''));
               success++;
             } else {
-              await store.update(record.updated(status: 'error', error: 'رسید قبلی هنوز تأیید نشده است.'));
+              final errors = decoded['errors'] as Map;
+              final conflict = errors['nid'];
+              await store.update(record.updated(status: 'error', error:
+                conflict != null ? 'کد ملی: $conflict' : 'رسید قبلی هنوز تأیید نشده است.'));
               failed++;
             }
           } else {
