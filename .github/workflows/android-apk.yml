@@ -85,11 +85,11 @@ jobs:
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk public-downloads/JanFada-Android-ARM64.apk
           cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk public-downloads/JanFada-Android-ARM32.apk
           sha256sum public-downloads/*.apk | tee public-downloads/SHA256SUMS.txt
-          tag="janfada-v1.3.0-native-camera"
-          notes="جان فدا | وارثین ۱.۳ با دوربین معمولی گوشی، تاریخ تولد سه‌قسمتی، کد ملی، نظام وظیفه، تحصیل و تخصص و فونت وزیرمتن. APKها از خروجی موفق GitHub Actions ساخته شده‌اند؛ دوربین، همگام‌سازی و پیامک روی گوشی واقعی هنوز نیاز به آزمون دارند. این نسخه با امضای آزمایشی ساخته شده است و برای بروزرسانی پایدار باید از کلید انتشار ثابت استفاده شود."
+          tag="janfada-v1.3.1-date-row"
+          notes="جان فدا | وارثین ۱.۳.۱ — اصلاح نمایش تاریخ تولد شمسی در یک ردیف با اندازه‌های متناسب روی گوشی‌های مختلف؛ دوربین عادی، ثبت آفلاین و فونت وزیرمتن. APKها از خروجی موفق GitHub Actions ساخته شده‌اند؛ دوربین، همگام‌سازی و پیامک روی گوشی واقعی هنوز نیاز به آزمون دارند. این نسخه با امضای آزمایشی ساخته شده است و برای بروزرسانی پایدار باید از کلید انتشار ثابت استفاده شود."
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" public-downloads/* --clobber
           else
-            gh release create "$tag" public-downloads/* --target "$GITHUB_SHA" --title "جان فدا | وارثین ۱.۳ — ثبت‌نام تکمیل‌شده و دوربین عادی" --notes "$notes" --prerelease
+            gh release create "$tag" public-downloads/* --target "$GITHUB_SHA" --title "جان فدا | وارثین ۱.۳.۱ — اصلاح تاریخ تولد در یک ردیف" --notes "$notes" --prerelease
           fi
           gh release view "$tag" --json url,assets --jq '{url:.url,assets:[.assets[].name]}'
