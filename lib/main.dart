@@ -530,7 +530,7 @@ class _RecordDetailState extends State<RecordDetail> {
   @override Widget build(BuildContext context) {
     final r = widget.record;
     final labels = {'first_name':'نام', 'last_name':'نام خانوادگی', 'father_name':'نام پدر', 'mobile':'شماره همراه',
-      'birth_date':'تاریخ تولد', 'city':'شهر / روستا', 'address':'نشانی', 'activity':'حوزه همکاری', 'notes':'توضیحات'};
+      'birth_date':'تاریخ تولد', 'city':'شهر / روستا', 'address':'نشانی', 'notes':'توضیحات'};
     return Scaffold(appBar: AppBar(title: Text('پرونده ${r.name}')),
       body: ListView(padding: const EdgeInsets.all(16), children: [
         if (photo != null) ClipRRect(borderRadius: BorderRadius.circular(15), child: Image.memory(photo!, height: 230)),
