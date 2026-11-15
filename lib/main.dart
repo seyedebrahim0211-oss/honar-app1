@@ -14,10 +14,10 @@ import 'portrait_camera.dart';
 import 'staff_auth.dart';
 import 'phone_login.dart';
 
-const green = Color(0xFF165F5A);
-const cream = Color(0xFFF8F4EC);
-const gold = Color(0xFFB8914A);
-const ink = Color(0xFF203C3B);
+const green = Color(0xFF075648);
+const cream = Color(0xFFF8F2E9);
+const gold = Color(0xFFBE9650);
+const ink = Color(0xFF123C34);
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,7 +28,7 @@ class JanFadaApp extends StatelessWidget {
   const JanFadaApp({super.key});
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'جان‌فدا | ثبت‌نام', debugShowCheckedModeBanner: false,
+    title: 'جان فدا | وارثین', debugShowCheckedModeBanner: false,
     locale: const Locale('fa', 'IR'),
     theme: ThemeData(
       useMaterial3: true, scaffoldBackgroundColor: cream,
@@ -37,8 +37,17 @@ class JanFadaApp extends StatelessWidget {
       filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)))),
       inputDecorationTheme: InputDecorationTheme(
         filled: true, fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        border: OutlineInputBorder(borderSide: BorderSide(color: gold.withValues(alpha: .32)), borderRadius: BorderRadius.circular(13)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 16),
+        prefixIconColor: green,
+        labelStyle: const TextStyle(color: ink, fontSize: 14),
+        floatingLabelStyle: const TextStyle(color: green, fontWeight: FontWeight.w700),
+        enabledBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: gold.withValues(alpha: .35)),
+          borderRadius: BorderRadius.circular(17)),
+        focusedBorder: OutlineInputBorder(
+          borderSide: const BorderSide(color: green, width: 1.5),
+          borderRadius: BorderRadius.circular(17)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(17)),
       ),
     ),
     builder: (context, child) => Directionality(textDirection: TextDirection.rtl, child: child!),
@@ -123,8 +132,8 @@ class _SecureGatewayState extends State<SecureGateway> with WidgetsBindingObserv
       child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 390), child: Column(
         mainAxisSize: MainAxisSize.min, children: [
           const Icon(Icons.local_florist_outlined, size: 56, color: gold), const SizedBox(height: 14),
-          const Text('پویش جان‌فدا', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, color: ink)),
-          const SizedBox(height: 6), const Text('سامانه امن ثبت‌نام میدانی | هنر مردمی'),
+          const Text('جان فدا | وارثین', style: TextStyle(fontSize: 29, fontWeight: FontWeight.w900, color: ink)),
+          const SizedBox(height: 6), const Text('ثبت‌نام و مدیریت پرونده‌های میدانی'),
           const SizedBox(height: 30),
           if (loading) const CircularProgressIndicator() else ...[
             Text(stored == null ? 'برای محافظت از اطلاعات، رمز ۶ رقمی تعیین کنید.' : 'رمز مسئول ثبت‌نام را وارد کنید.'),
@@ -211,7 +220,7 @@ class _DashboardState extends State<Dashboard> {
           const SizedBox(height: 10),
           Text(phone ?? 'ورود انجام نشده است', textDirection: TextDirection.ltr),
           const SizedBox(height: 12),
-          const Text('دسترسی این شماره توسط مدیر سایت هنر مردمی تعیین می‌شود. رمز اتصال مشترک نیاز نیست.'),
+          const Text('دسترسی این شماره توسط مدیر سایت وارثین تعیین می‌شود. رمز اتصال مشترک نیاز نیست.'),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('بستن')),
@@ -244,7 +253,19 @@ class _DashboardState extends State<Dashboard> {
   @override Widget build(BuildContext context) {
     final pending = people.where((p) => p.status != 'synced').length;
     return Scaffold(
-      appBar: AppBar(title: const Text('جان‌فدا  |  هنر مردمی', style: TextStyle(fontWeight: FontWeight.bold)),
+      appBar: AppBar(
+        toolbarHeight: 82,
+        titleSpacing: 4,
+        title: const Column(crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('جان فدا | وارثین', maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20, color: ink)),
+            SizedBox(height: 4),
+            Text('شناسایی نیرو برای جذب در گردان امام حسین(ع)',
+              maxLines: 2, overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: ink)),
+          ]),
         actions: [
           IconButton(onPressed: _staffSettings, icon: const Icon(Icons.admin_panel_settings_outlined), tooltip: 'حساب مسئول ثبت‌نام'),
           Padding(padding: const EdgeInsetsDirectional.only(end: 12), child: Tooltip(message: online ? 'شبکه متصل' : 'آفلاین',
@@ -257,10 +278,10 @@ class _DashboardState extends State<Dashboard> {
             gradient: const LinearGradient(colors: [green, Color(0xFF0C4747)]),
             borderRadius: BorderRadius.circular(18)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('پرونده‌های ثبت‌نام پویش', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18)),
+            const Text('وضعیت ثبت‌نام‌ها', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 17)),
             const SizedBox(height: 12),
             Row(children: [
-              _counter('کل ثبت‌نام', people.length.toString()),
+              _counter('کل ثبت‌نام‌ها', people.length.toString()),
               const SizedBox(width: 12),
               _counter('در انتظار ارسال', pending.toString()),
               const SizedBox(width: 12),
@@ -273,7 +294,7 @@ class _DashboardState extends State<Dashboard> {
               export: _export, exporting: exporting, onReload: _refresh)),
       ])),
       bottomNavigationBar: NavigationBar(
-        backgroundColor: Colors.white, selectedIndex: selected,
+        height: 74, backgroundColor: Colors.white, selectedIndex: selected,
         onDestinationSelected: (v) => setState(() => selected = v),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.person_add_alt_1_outlined), selectedIcon: Icon(Icons.person_add_alt_1), label: 'ثبت‌نام جدید'),
@@ -301,7 +322,6 @@ class _RegistrationFormState extends State<RegistrationForm> {
       name: TextEditingController(),
   };
   Uint8List? image;
-  String activity = 'فرهنگی و هنری';
   bool consent = false, saving = false;
   final picker = ImagePicker();
   @override
@@ -310,7 +330,6 @@ class _RegistrationFormState extends State<RegistrationForm> {
     final old = widget.initial;
     if (old != null) {
       for (final item in controllers.entries) { item.value.text = old.data[item.key] ?? ''; }
-      activity = old.data['activity'] ?? 'فرهنگی و هنری';
       consent = true;
       LocalStore.instance.readImage(old.photo).then((data) {
         if (mounted) setState(() => image = data);
@@ -343,7 +362,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
     if (!consent) { _message('رضایت فرد برای ثبت مشخصات و عکس الزامی است.'); return; }
     setState(() => saving = true);
     try {
-      final d = {for (final e in controllers.entries) e.key: _digits(e.value.text.trim()), 'activity': activity};
+      final d = {for (final e in controllers.entries) e.key: _digits(e.value.text.trim())};
       if (widget.initial == null && await LocalStore.instance.isDuplicate(d['first_name']!, d['last_name']!, d['mobile']!)) {
         if (!mounted) return;
         final proceed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
@@ -358,7 +377,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
         await LocalStore.instance.create(d, image!);
         for (final c in controllers.values) { c.clear(); }
         key.currentState?.reset();
-        setState(() { image = null; consent = false; activity = 'فرهنگی و هنری'; });
+        setState(() { image = null; consent = false; });
       } else {
         await LocalStore.instance.edit(widget.initial!, d, image!);
       }
@@ -376,7 +395,19 @@ class _RegistrationFormState extends State<RegistrationForm> {
     Padding(padding: const EdgeInsets.only(bottom: 13), child: TextFormField(
       controller: controllers[name], keyboardType: type, maxLines: lines,
       textDirection: name == 'mobile' ? TextDirection.ltr : TextDirection.rtl,
-      decoration: InputDecoration(labelText: label, hintText: hint),
+      decoration: InputDecoration(
+        labelText: label, hintText: hint,
+        prefixIcon: Icon({
+          'first_name': Icons.person_outline,
+          'last_name': Icons.badge_outlined,
+          'father_name': Icons.people_outline,
+          'mobile': Icons.phone_android_outlined,
+          'birth_date': Icons.calendar_month_outlined,
+          'city': Icons.place_outlined,
+          'address': Icons.home_outlined,
+          'notes': Icons.notes_outlined,
+        }[name] ?? Icons.edit_outlined, size: 22),
+      ),
       validator: (val) {
         final v = (val ?? '').trim();
         if (required && v.isEmpty) return 'این مورد الزامی است';
@@ -387,9 +418,15 @@ class _RegistrationFormState extends State<RegistrationForm> {
     ));
   @override void dispose() { for (final c in controllers.values) { c.dispose(); } super.dispose(); }
 
-  @override Widget build(BuildContext context) => Form(key: key, child: ListView(
+  @override Widget build(BuildContext context) => Form(key: key, child: Center(
+    child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 660), child: ListView(
     padding: const EdgeInsets.fromLTRB(16, 6, 16, 24), children: [
-      const Text('مشخصات فردی', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: ink)),
+      const Padding(padding: EdgeInsetsDirectional.only(start: 6),
+        child: Row(children: [
+          Icon(Icons.edit_note_outlined, color: gold, size: 25),
+          SizedBox(width: 8),
+          Text('مشخصات فردی', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: ink)),
+        ])),
       const SizedBox(height: 12),
       field('first_name', 'نام *', required: true),
       field('last_name', 'نام خانوادگی *', required: true),
@@ -398,13 +435,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
       field('birth_date', 'تاریخ تولد شمسی', hint: '۱۳۸۵/۰۵/۱۵'),
       field('city', 'شهر یا روستا *', required: true),
       field('address', 'نشانی', lines: 2),
-      Padding(padding: const EdgeInsets.only(bottom: 13), child: DropdownButtonFormField<String>(
-        initialValue: activity, decoration: const InputDecoration(labelText: 'حوزه همکاری'),
-        items: ['فرهنگی و هنری', 'رسانه‌ای', 'اجرایی', 'پشتیبانی', 'سایر']
-          .map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
-        onChanged: (a) { if (a != null) setState(() => activity = a); },
-      )),
-      field('notes', 'توضیحات', lines: 2),
+      field('notes', 'توضیحات', lines: 3),
       const SizedBox(height: 5), const Text('عکس فرد *', style: TextStyle(fontWeight: FontWeight.bold, color: ink)),
       const SizedBox(height: 8),
       Container(height: 190, decoration: BoxDecoration(color: Colors.white, border: Border.all(color: gold.withValues(alpha: .5)), borderRadius: BorderRadius.circular(14)),
@@ -413,7 +444,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
           : ClipRRect(borderRadius: BorderRadius.circular(14), child: Image.memory(image!, fit: BoxFit.contain)),
       ),
       const SizedBox(height: 10),
-      const Text('در دوربین هوشمند، پس از قرارگیری چهره در بیضی و واضح شدن تصویر، کادر سبز و دکمه ثبت فعال می‌شوند.', style: TextStyle(fontSize: 12, color: ink)),
+      const Text('دوربین هوشمند وضعیت چهره، نور و وضوح را با درصد نمایش می‌دهد. وقتی دور کادر کاملاً سبز شد عکس بگیرید.', style: TextStyle(fontSize: 12, color: ink)),
       const SizedBox(height: 8),
       Row(children: [
         Expanded(child: OutlinedButton.icon(onPressed: guidedPhoto, icon: const Icon(Icons.camera_alt_outlined), label: const Text('دوربین هوشمند'))),
@@ -429,10 +460,10 @@ class _RegistrationFormState extends State<RegistrationForm> {
       FilledButton.icon(onPressed: saving ? null : save,
         icon: const Icon(Icons.save_alt_outlined), label: Text(saving ? 'در حال ذخیره‌سازی...' : (widget.initial == null ? 'ثبت و ذخیره پرونده' : 'ذخیره تغییرات'))),
       const SizedBox(height: 8),
-      const Text('آفلاین: اطلاعات فقط روی گوشی نگهداری می‌شود. پس از ثبت موفق در سایت، پیامک تأیید برای شماره همراه ارسال خواهد شد.',
+      const Text('در حالت آفلاین اطلاعات روی گوشی ذخیره می‌شود. پس از ارسال موفق در سایت، پیامک تأیید برای شماره همراه ارسال می‌شود. متن پیامک از پنل مدیریت قابل تنظیم است.',
         textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Colors.black54)),
     ],
-  ));
+  )));
 }
 
 class RecordsView extends StatefulWidget {
