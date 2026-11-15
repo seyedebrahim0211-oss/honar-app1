@@ -36,7 +36,7 @@ jobs:
           manifest=Path('android/app/src/main/AndroidManifest.xml')
           s=manifest.read_text()
           s=s.replace('<application', '<uses-permission android:name="android.permission.CAMERA"/>\n    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-feature android:name="android.hardware.camera" android:required="false"/>\n    <application android:allowBackup="false" android:usesCleartextTraffic="false"',1)
-          s=s.replace('android:label="jan_fada"', 'android:label="جان‌فدا"')
+          s=s.replace('android:label="jan_fada"', 'android:label="جان فدا | وارثین"')
           # Minimal Iranian geometric emblem; generated as a native Android vector.
           emblem = '<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108"><path android:fillColor="#0D4B4D" android:pathData="M0,0 H108 V108 H0 Z"/><path android:fillColor="#D2AC62" android:pathData="M54,8 L65,28 L86,22 L80,43 L100,54 L80,65 L86,86 L65,80 L54,100 L43,80 L22,86 L28,65 L8,54 L28,43 L22,22 L43,28 Z"/><path android:fillColor="#0D4B4D" android:pathData="M54,26 L61,39 L75,33 L69,47 L82,54 L69,61 L75,75 L61,69 L54,82 L47,69 L33,75 L39,61 L26,54 L39,47 L33,33 L47,39 Z"/><path android:fillColor="#F4EEE1" android:pathData="M54,41 A13,13 0 1,1 54,67 A13,13 0 1,1 54,41 Z"/><path android:fillColor="#B7473C" android:pathData="M54,46 A8,8 0 1,1 54,62 A8,8 0 1,1 54,46 Z"/></vector>'
           Path('android/app/src/main/res/drawable/janfada_icon.xml').write_text(emblem)
