@@ -463,7 +463,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
       const Text('در حالت آفلاین اطلاعات روی گوشی ذخیره می‌شود. پس از ارسال موفق در سایت، پیامک تأیید برای شماره همراه ارسال می‌شود. متن پیامک از پنل مدیریت قابل تنظیم است.',
         textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Colors.black54)),
     ],
-  )));
+  ))));
 }
 
 class RecordsView extends StatefulWidget {
