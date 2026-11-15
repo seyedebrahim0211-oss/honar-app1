@@ -12,12 +12,12 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart';
 import 'package:uuid/uuid.dart';
+import 'staff_auth.dart';
 
 const formId = 8;
 const formUrl = 'https://honarmardomi.ir/form/jan-fada/';
 const submitUrl = 'https://honarmardomi.ir/wp-json/negarform/v1/submit/$formId';
 const consentValue = 'با ثبت و نگهداری مشخصات و عکس برای مدیریت پویش موافقم';
-const operatorKeyName = 'janfada_operator_key_v1';
 
 class Registrant {
   Registrant({required this.id, required this.data, required this.photo, this.status = 'pending', this.code = '', this.error = '', required this.created});
@@ -149,13 +149,14 @@ class FormSync {
     busy = true;
     var success = 0, failed = 0;
     try {
-      final operatorKey = (await const FlutterSecureStorage().read(key: operatorKeyName) ?? '').trim();
-      if (operatorKey.length < 40) return (0, 0);
+      final session = await StaffAuth.instance.token();
+      if (session == null || session.isEmpty) return (0, 0);
+      final authHeaders = await StaffAuth.instance.sessionHeaders();
       final records = (await store.all()).where((r) => r.status != 'synced').toList();
       for (final record in records) {
         try {
           final req = http.MultipartRequest('POST', Uri.parse(submitUrl));
-          req.headers['X-Janfada-Device-Key'] = operatorKey;
+          req.headers.addAll(authHeaders);
           for (final entry in record.data.entries) {
             if (entry.key != 'consent') req.fields[entry.key] = entry.value;
           }
@@ -171,7 +172,12 @@ class FormSync {
             body = await response.stream.bytesToString();
           } finally { client.close(); }
           final decoded = jsonDecode(body) as Map<String, dynamic>;
-          if (response.statusCode == 200 && decoded['ok'] == true) {
+          if (response.statusCode == 401 || response.statusCode == 403) {
+            await StaffAuth.instance.clearSession();
+            await store.update(record.updated(status: 'error', error: 'دسترسی این شماره منقضی یا لغو شده است. دوباره با پیامک وارد شوید.'));
+            failed++;
+            break;
+          } else if (response.statusCode == 200 && decoded['ok'] == true) {
             await store.update(record.updated(status: 'synced', code: (decoded['code'] ?? '').toString(), error: ''));
             success++;
           } else if (response.statusCode == 422 && decoded['errors'] is Map &&
@@ -184,7 +190,7 @@ class FormSync {
             try {
               final check = await client.get(
                 Uri.parse('https://honarmardomi.ir/wp-json/negarform/v1/janfada/receipt/${record.id}'),
-                headers: {'X-Janfada-Device-Key': operatorKey},
+                headers: authHeaders,
               ).timeout(const Duration(seconds: 20));
               if (check.statusCode == 200) {
                 final answer = jsonDecode(check.body) as Map<String, dynamic>;
