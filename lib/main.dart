@@ -10,7 +10,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as image_lib;
 import 'package:share_plus/share_plus.dart';
 import 'data.dart';
-import 'portrait_camera.dart';
 import 'staff_auth.dart';
 import 'phone_login.dart';
 
@@ -318,11 +317,15 @@ class RegistrationForm extends StatefulWidget {
 class _RegistrationFormState extends State<RegistrationForm> {
   final key = GlobalKey<FormState>();
   final controllers = <String, TextEditingController>{
-    for (final name in ['first_name','last_name','father_name','mobile','birth_date','city','address','notes'])
+    for (final name in ['first_name','last_name','father_name','mobile','nid','city','education_level','study_place','work_place','military_status','specialty','interests','address','notes'])
       name: TextEditingController(),
   };
   Uint8List? image;
   bool consent = false, saving = false;
+  String? birthYear, birthMonth, birthDay;
+  static const monthNames = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+  static const militaryOptions = ['مشمول','در حال خدمت','پایان خدمت','معافیت تحصیلی','معافیت دائم','معافیت موقت','غیرمشمول','سایر'];
+  static const educationOptions = ['ابتدایی','متوسطه اول','دیپلم','کاردانی','کارشناسی','کارشناسی ارشد','دکتری','حوزوی','سایر'];
   final picker = ImagePicker();
   @override
   void initState() {
@@ -330,15 +333,19 @@ class _RegistrationFormState extends State<RegistrationForm> {
     final old = widget.initial;
     if (old != null) {
       for (final item in controllers.entries) { item.value.text = old.data[item.key] ?? ''; }
+      final parts = (old.data['birth_date'] ?? '').split('/');
+      birthYear = old.data['birth_year']?.isNotEmpty == true ? old.data['birth_year'] : (parts.length == 3 ? parts[0] : null);
+      birthMonth = old.data['birth_month'];
+      if ((birthMonth == null || birthMonth!.isEmpty) && parts.length == 3) { final m = int.tryParse(parts[1]); if (m != null && m >= 1 && m <= 12) birthMonth = monthNames[m - 1]; }
+      birthDay = old.data['birth_day']?.isNotEmpty == true ? old.data['birth_day'] : (parts.length == 3 ? parts[2] : null);
+      if (birthYear == '') birthYear = null;
+      if (birthMonth == '') birthMonth = null;
+      if (birthDay == '') birthDay = null;
       consent = true;
       LocalStore.instance.readImage(old.photo).then((data) {
         if (mounted) setState(() => image = data);
       }).catchError((Object _) {});
     }
-  }
-  Future<void> guidedPhoto() async {
-    final jpeg = await Navigator.push<Uint8List>(context, MaterialPageRoute(builder: (_) => const PortraitCamera()));
-    if (jpeg != null && mounted) setState(() => image = jpeg);
   }
   Future<void> pick(ImageSource source) async {
     try {
@@ -444,10 +451,10 @@ class _RegistrationFormState extends State<RegistrationForm> {
           : ClipRRect(borderRadius: BorderRadius.circular(14), child: Image.memory(image!, fit: BoxFit.contain)),
       ),
       const SizedBox(height: 10),
-      const Text('دوربین هوشمند وضعیت چهره، نور و وضوح را با درصد نمایش می‌دهد. وقتی دور کادر کاملاً سبز شد عکس بگیرید.', style: TextStyle(fontSize: 12, color: ink)),
+      const Text('عکس دلخواه را با دوربین معمولی گوشی بگیرید یا از گالری انتخاب کنید؛ بررسی هوشمند و محدودیت کادربندی حذف شد.', style: TextStyle(fontSize: 12, color: ink)),
       const SizedBox(height: 8),
       Row(children: [
-        Expanded(child: OutlinedButton.icon(onPressed: guidedPhoto, icon: const Icon(Icons.camera_alt_outlined), label: const Text('دوربین هوشمند'))),
+        Expanded(child: OutlinedButton.icon(onPressed: () => pick(ImageSource.camera), icon: const Icon(Icons.camera_alt_outlined), label: const Text('دوربین معمولی گوشی'))),
         const SizedBox(width: 9),
         Expanded(child: OutlinedButton.icon(onPressed: () => pick(ImageSource.gallery), icon: const Icon(Icons.photo_library_outlined), label: const Text('گالری'))),
       ]),
