@@ -136,7 +136,7 @@ class _PortraitCameraState extends State<PortraitCamera> with WidgetsBindingObse
         light.brightness >= 40 && light.brightness <= 230 ? 8 : 0);
       final sharpPoints = (20 * (light.edgeEnergy / 100).clamp(0.0, 1.0)).round();
       final total = (25 + framePoints + brightnessPoints +
-          sharpPoints + (pose ? 10 : 0)).clamp(0, 100);
+          sharpPoints + (pose ? 10 : 0)).clamp(0, 100).toInt();
       final passes = framing && pose && wellLit && sharp && total >= 85;
       String guidance;
       if (!framing) {
