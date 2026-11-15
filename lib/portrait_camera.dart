@@ -27,6 +27,9 @@ class _PortraitCameraState extends State<PortraitCamera> with WidgetsBindingObse
   String _message = 'در حال آماده‌سازی دوربین…';
   bool _processing = false, _taking = false, _ready = false, _disposed = false;
   int _goodFrames = 0;
+  int _qualityPercent = 0;
+  bool _faceOk = false, _framingOk = false, _lightOk = false, _sharpOk = false, _poseOk = false;
+  bool _guideExpanded = false;
   DateTime _lastFrame = DateTime(2000);
 
   static const _rotations = <DeviceOrientation, int>{
@@ -66,7 +69,7 @@ class _PortraitCameraState extends State<PortraitCamera> with WidgetsBindingObse
     if (_taking || _available.length < 2) return;
     final next = _selected?.lensDirection == CameraLensDirection.front
         ? CameraLensDirection.back : CameraLensDirection.front;
-    setState(() { _ready = false; _goodFrames = 0; _message = 'در حال تعویض دوربین…'; });
+    setState(() { _ready = false; _goodFrames = 0; _qualityPercent = 0; _message = 'در حال تعویض دوربین…'; });
     final previous = _controller;
     _controller = null;
     if (previous != null) {
@@ -91,7 +94,7 @@ class _PortraitCameraState extends State<PortraitCamera> with WidgetsBindingObse
       // NV21 is required by ML Kit for CameraImage byte streams on Android.
       final format = InputImageFormatValue.fromRawValue(frame.format.raw);
       if (format == null || format != InputImageFormat.nv21 || frame.planes.length != 1) {
-        _update(false, 'فرمت تصویر این دوربین برای تحلیل زنده پشتیبانی نمی‌شود.');
+        _qualityUpdate(0, false, false, false, false, false, 'تحلیل زنده با این دوربین سازگار نیست؛ دوربین دیگری را امتحان کنید.');
         return;
       }
       final compensation = _rotations[cam.value.deviceOrientation] ?? 0;
@@ -107,7 +110,8 @@ class _PortraitCameraState extends State<PortraitCamera> with WidgetsBindingObse
           rotation: rotation, format: format, bytesPerRow: plane.bytesPerRow));
       final faces = await _detector.processImage(input);
       if (faces.length != 1) {
-        _update(false, faces.isEmpty ? 'چهره در کادر شناسایی نشد.' : 'تنها یک چهره در کادر باشد.');
+        _qualityUpdate(0, false, false, false, false, false,
+          faces.isEmpty ? 'چهره در تصویر پیدا نشد؛ صورت را داخل بیضی قرار دهید.' : 'فقط یک چهره در کادر دیده شود.');
         return;
       }
       final b = faces.first.boundingBox;
@@ -116,38 +120,60 @@ class _PortraitCameraState extends State<PortraitCamera> with WidgetsBindingObse
       final height = rotated ? frame.width.toDouble() : frame.height.toDouble();
       final cx = b.center.dx / width, cy = b.center.dy / height;
       final faceWidth = b.width / width, faceHeight = b.height / height;
-      if ((cx - 0.5).abs() > 0.19 || (cy - 0.47).abs() > 0.21 ||
-          faceWidth < 0.20 || faceWidth > 0.83 || faceHeight < 0.23 || faceHeight > 0.86) {
-        _update(false, 'صورت را در وسط کادر بیضی قرار دهید.');
-        return;
-      }
-      if (faces.first.headEulerAngleY != null && faces.first.headEulerAngleY!.abs() > 18) {
-        _update(false, 'لطفاً مستقیم به دوربین نگاه کنید.');
-        return;
-      }
-      final quality = FrameQuality.fromNv21(frame);
-      if (quality.brightness < 55) {
-        _update(false, 'نور کافی نیست؛ رو به نور قرار بگیرید.');
-      } else if (quality.brightness > 214) {
-        _update(false, 'نور زیاد است؛ از نور مستقیم فاصله بگیرید.');
-      } else if (quality.edgeEnergy < 68) {
-        _update(false, 'تصویر تار است؛ گوشی را ثابت نگه دارید.');
+      final framing = (cx - 0.5).abs() <= 0.19 &&
+          (cy - 0.47).abs() <= 0.21 &&
+          faceWidth >= 0.20 && faceWidth <= 0.83 &&
+          faceHeight >= 0.23 && faceHeight <= 0.86;
+      final turn = faces.first.headEulerAngleY?.abs() ?? 0.0;
+      final tilt = faces.first.headEulerAngleZ?.abs() ?? 0.0;
+      final pose = turn <= 18 && tilt <= 16;
+      final light = FrameQuality.fromNv21(frame);
+      final wellLit = light.brightness >= 55 && light.brightness <= 214;
+      final sharp = light.edgeEnergy >= 68;
+      final proximity = math.max((cx - 0.5).abs() / .19, (cy - .47).abs() / .21);
+      final framePoints = framing ? 25 : (25 * (1 - math.min(1.0, proximity / 2))).round();
+      final brightnessPoints = wellLit ? 20 : (
+        light.brightness >= 40 && light.brightness <= 230 ? 8 : 0);
+      final sharpPoints = (20 * (light.edgeEnergy / 100).clamp(0.0, 1.0)).round();
+      final total = (25 + framePoints + brightnessPoints +
+          sharpPoints + (pose ? 10 : 0)).clamp(0, 100);
+      final passes = framing && pose && wellLit && sharp && total >= 85;
+      String guidance;
+      if (!framing) {
+        guidance = 'صورت را در مرکز بیضی و با فاصله مناسب قرار دهید.';
+      } else if (!pose) {
+        guidance = 'روبه‌روی دوربین بایستید و سر را صاف نگه دارید.';
+      } else if (light.brightness < 55) {
+        guidance = 'نور کم است؛ روبه‌روی نور ملایم قرار بگیرید.';
+      } else if (light.brightness > 214) {
+        guidance = 'نور زیاد است؛ از نور مستقیم فاصله بگیرید.';
+      } else if (!sharp) {
+        guidance = 'کمی ثابت بمانید تا تصویر واضح شود.';
       } else {
-        _update(true, 'چهره واضح و داخل کادر است.');
+        guidance = 'کیفیت مناسب است؛ برای ثبت عکس آماده شوید.';
       }
+      _qualityUpdate(total, true, framing, wellLit, sharp, pose, guidance, passes: passes);
     } catch (_) {
-      _update(false, 'تحلیل چهره ناموفق بود؛ دوباره تلاش کنید.');
+      _qualityUpdate(0, false, false, false, false, false,
+        'بررسی تصویر انجام نشد؛ دوباره تلاش کنید.');
     }
   }
 
-  void _update(bool passes, String message) {
+  void _qualityUpdate(int quality, bool face, bool framed, bool light,
+      bool sharp, bool pose, String message, {bool passes = false}) {
     if (!mounted || _disposed) return;
-    if (passes) { _goodFrames = math.min(_goodFrames + 1, 4); }
-    else { _goodFrames = 0; }
+    _goodFrames = passes ? math.min(_goodFrames + 1, 4) : 0;
     final ready = _goodFrames >= 3;
-    if (_ready != ready || _message != message) {
-      setState(() { _ready = ready; _message = ready ? 'آماده ثبت عکس ✓' : message; });
-    }
+    setState(() {
+      _qualityPercent = quality;
+      _faceOk = face;
+      _framingOk = framed;
+      _lightOk = light;
+      _sharpOk = sharp;
+      _poseOk = pose;
+      _ready = ready;
+      _message = ready ? 'چهره واضح است؛ می‌توانید عکس بگیرید.' : message;
+    });
   }
 
   Future<void> _capture() async {
@@ -173,7 +199,7 @@ class _PortraitCameraState extends State<PortraitCamera> with WidgetsBindingObse
       if (mounted) Navigator.of(context).pop(jpeg);
     } catch (e) {
       if (mounted) {
-        setState(() { _ready = false; _goodFrames = 0; _message = e.toString().replaceFirst('FormatException: ', ''); });
+        setState(() { _ready = false; _goodFrames = 0; _qualityPercent = 0; _message = e.toString().replaceFirst('FormatException: ', ''); });
         try { if (!cam.value.isStreamingImages) await cam.startImageStream(_onFrame); } catch (_) {}
       }
     } finally {
