@@ -451,30 +451,94 @@ class _RegistrationFormState extends State<RegistrationForm> {
         onChanged: onSelected,
       ));
 
+  // Compact date controls: all three stay on one row, including small phones.
+  // Labels live above the controls (rather than floating inside a narrow field).
+  Widget _birthSelect(String label, String? value, List<String> choices,
+      ValueChanged<String?> onChanged) =>
+    Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Padding(
+        padding: const EdgeInsetsDirectional.only(start: 3, bottom: 5),
+        child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: ink, fontSize: 11,
+            fontWeight: FontWeight.w800)),
+      ),
+      Semantics(
+        label: label,
+        child: Container(
+          height: 47,
+          padding: const EdgeInsets.symmetric(horizontal: 7),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: const Color(0xFFE1D8C8)),
+            borderRadius: BorderRadius.circular(13)),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: choices.contains(value) ? value : null,
+              isExpanded: true,
+              isDense: true,
+              iconSize: 17,
+              icon: const Icon(Icons.keyboard_arrow_down_rounded,
+                color: green),
+              dropdownColor: Colors.white,
+              menuMaxHeight: 350,
+              borderRadius: BorderRadius.circular(14),
+              hint: const Text('انتخاب', maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: Color(0xFF8B948A))),
+              style: const TextStyle(fontSize: 12, color: ink,
+                fontWeight: FontWeight.w700, fontFamily: 'Vazirmatn'),
+              items: choices.map((choice) => DropdownMenuItem<String>(
+                value: choice,
+                child: Text(choice, maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12)),
+              )).toList(),
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+      ),
+    ]);
+
   Widget birthDatePicker() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      const Padding(padding: EdgeInsets.fromLTRB(3, 1, 3, 9),
+      const Padding(
+        padding: EdgeInsets.fromLTRB(3, 2, 3, 11),
         child: Text('تاریخ تولد شمسی — سال، ماه و روز',
-          style: TextStyle(color: ink, fontWeight: FontWeight.w800))),
-      LayoutBuilder(builder: (context, box) {
-        final wide = box.maxWidth > 450;
-        final year = choose('سال تولد', birthYear,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: ink, fontSize: 13,
+            fontWeight: FontWeight.w800)),
+      ),
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(flex: 4, child: _birthSelect(
+          'سال تولد', birthYear,
           List.generate(106, (i) => (1405 - i).toString()),
-          (v) => setState(() { birthYear = v; if (birthDay != null &&
-            int.parse(birthDay!) > _maxDays) birthDay = null; }));
-        final month = choose('ماه تولد', birthMonth, monthNames,
-          (v) => setState(() { birthMonth = v; if (birthDay != null &&
-            int.parse(birthDay!) > _maxDays) birthDay = null; }));
-        final day = choose('روز تولد', birthDay,
-          List.generate(_maxDays, (i) => (i + 1).toString().padLeft(2, '0')),
-          (v) => setState(() => birthDay = v));
-        if (!wide) return Column(children: [
-          Row(children: [Expanded(child: year), const SizedBox(width: 10),
-            Expanded(child: month)]), day,
-        ]);
-        return Row(children: [Expanded(child: year), const SizedBox(width: 10),
-          Expanded(child: month), const SizedBox(width: 10), Expanded(child: day)]);
-      }),
+          (v) => setState(() {
+            birthYear = v;
+            if (birthDay != null && int.parse(birthDay!) > _maxDays) {
+              birthDay = null;
+            }
+          }),
+        )),
+        const SizedBox(width: 6),
+        Expanded(flex: 5, child: _birthSelect(
+          'ماه تولد', birthMonth, monthNames,
+          (v) => setState(() {
+            birthMonth = v;
+            if (birthDay != null && int.parse(birthDay!) > _maxDays) {
+              birthDay = null;
+            }
+          }),
+        )),
+        const SizedBox(width: 6),
+        Expanded(flex: 3, child: _birthSelect(
+          'روز تولد', birthDay,
+          List.generate(_maxDays,
+            (i) => (i + 1).toString().padLeft(2, '0')),
+          (v) => setState(() => birthDay = v),
+        )),
+      ]),
+      const SizedBox(height: 13),
     ]);
 
   Widget sectionCard(String label, IconData icon, List<Widget> children) =>
