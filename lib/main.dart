@@ -365,11 +365,29 @@ class _RegistrationFormState extends State<RegistrationForm> {
   }
   Future<void> save() async {
     if (!key.currentState!.validate()) return;
+    final hasSomeBirth = birthYear != null || birthMonth != null || birthDay != null;
+    if (hasSomeBirth && (birthYear == null || birthMonth == null || birthDay == null)) {
+      _message('تاریخ تولد را با هر سه بخش سال، ماه و روز کامل کنید.');
+      return;
+    }
+    if (birthDay != null && int.parse(birthDay!) > _maxDays) {
+      _message('روز انتخاب‌شده با ماه و سال مطابقت ندارد.');
+      return;
+    }
     if (image == null) { _message('لطفاً عکس را ثبت کنید.'); return; }
     if (!consent) { _message('رضایت فرد برای ثبت مشخصات و عکس الزامی است.'); return; }
     setState(() => saving = true);
     try {
-      final d = {for (final e in controllers.entries) e.key: _digits(e.value.text.trim())};
+      final monthNumber = birthMonth == null ? 0 : monthNames.indexOf(birthMonth!) + 1;
+      final d = {
+        for (final e in controllers.entries) e.key: _digits(e.value.text.trim()),
+        'birth_year': birthYear ?? '',
+        'birth_month': birthMonth ?? '',
+        'birth_day': birthDay ?? '',
+        // Keep readable historical DOB for offline dossiers, not sent to new form.
+        'birth_date': birthYear == null ? '' :
+          birthYear! + '/' + monthNumber.toString().padLeft(2, '0') + '/' + birthDay!,
+      };
       if (widget.initial == null && await LocalStore.instance.isDuplicate(d['first_name']!, d['last_name']!, d['mobile']!)) {
         if (!mounted) return;
         final proceed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
@@ -384,7 +402,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
         await LocalStore.instance.create(d, image!);
         for (final c in controllers.values) { c.clear(); }
         key.currentState?.reset();
-        setState(() { image = null; consent = false; });
+        setState(() { image = null; consent = false; birthYear = null; birthMonth = null; birthDay = null; });
       } else {
         await LocalStore.instance.edit(widget.initial!, d, image!);
       }
@@ -398,10 +416,102 @@ class _RegistrationFormState extends State<RegistrationForm> {
     return ((c >= 0x6f0 && c <= 0x6f9) ? c - 0x6f0 : c - 0x660).toString();
   });
   void _message(String s) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s)));
+
+  int get _maxDays {
+    final m = birthMonth == null ? 0 : monthNames.indexOf(birthMonth!) + 1;
+    if (m == 0 || m <= 6) return 31;
+    if (m <= 11) return 30;
+    final y = int.tryParse(birthYear ?? '') ?? 1405;
+    return const {1, 5, 9, 13, 17, 22, 26, 30}.contains(y % 33) ? 30 : 29;
+  }
+
+  static bool nationalIdValid(String input) {
+    if (!RegExp(r'^[0-9]{10}$').hasMatch(input) ||
+        RegExp(r'^([0-9])\1{9}$').hasMatch(input)) return false;
+    var sum = 0;
+    for (var i = 0; i < 9; i++) {
+      sum += int.parse(input[i]) * (10 - i);
+    }
+    final remainder = sum % 11;
+    final checkDigit = int.parse(input[9]);
+    return remainder < 2 ? remainder == checkDigit : 11 - remainder == checkDigit;
+  }
+
+  Widget choose(String label, String? current, List<String> values,
+      ValueChanged<String?> onSelected) =>
+    Padding(padding: const EdgeInsets.only(bottom: 12),
+      child: DropdownButtonFormField<String>(
+        value: values.contains(current) ? current : null,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: label, prefixIcon: const Icon(Icons.arrow_drop_down_circle_outlined)),
+        items: values.map((v) => DropdownMenuItem(value: v, child: Text(v,
+          overflow: TextOverflow.ellipsis))).toList(),
+        onChanged: onSelected,
+      ));
+
+  Widget birthDatePicker() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const Padding(padding: EdgeInsets.fromLTRB(3, 1, 3, 9),
+        child: Text('تاریخ تولد شمسی — سال، ماه و روز',
+          style: TextStyle(color: ink, fontWeight: FontWeight.w800))),
+      LayoutBuilder(builder: (context, box) {
+        final wide = box.maxWidth > 450;
+        final year = choose('سال تولد', birthYear,
+          List.generate(106, (i) => (1405 - i).toString()),
+          (v) => setState(() { birthYear = v; if (birthDay != null &&
+            int.parse(birthDay!) > _maxDays) birthDay = null; }));
+        final month = choose('ماه تولد', birthMonth, monthNames,
+          (v) => setState(() { birthMonth = v; if (birthDay != null &&
+            int.parse(birthDay!) > _maxDays) birthDay = null; }));
+        final day = choose('روز تولد', birthDay,
+          List.generate(_maxDays, (i) => (i + 1).toString().padLeft(2, '0')),
+          (v) => setState(() => birthDay = v));
+        if (!wide) return Column(children: [
+          Row(children: [Expanded(child: year), const SizedBox(width: 10),
+            Expanded(child: month)]), day,
+        ]);
+        return Row(children: [Expanded(child: year), const SizedBox(width: 10),
+          Expanded(child: month), const SizedBox(width: 10), Expanded(child: day)]);
+      }),
+    ]);
+
+  Widget sectionCard(String label, IconData icon, List<Widget> children) =>
+    Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.fromLTRB(16, 17, 16, 9),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFE5D8C5)),
+        color: Colors.white,
+        boxShadow: const [BoxShadow(color: Color(0x10204D3A),
+          blurRadius: 18, offset: Offset(0, 6))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Container(width: 37, height: 37,
+            decoration: BoxDecoration(color: const Color(0xFFEAF2EC),
+              borderRadius: BorderRadius.circular(13)),
+            child: Icon(icon, color: green)),
+          const SizedBox(width: 9),
+          Expanded(child: Text(label, style: const TextStyle(
+            color: ink, fontSize: 17, fontWeight: FontWeight.w900))),
+        ]),
+        const Divider(height: 25, color: Color(0xFFEEE5DB)),
+        ...children,
+      ]),
+    );
+
+  Widget twoFields(Widget a, Widget b) => LayoutBuilder(builder: (ctx, box) =>
+    box.maxWidth >= 490
+      ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: a), const SizedBox(width: 12), Expanded(child: b)])
+      : Column(children: [a, b]));
+
   Widget field(String name, String label, {bool required = false, int lines = 1, TextInputType? type, String? hint}) =>
     Padding(padding: const EdgeInsets.only(bottom: 13), child: TextFormField(
       controller: controllers[name], keyboardType: type, maxLines: lines,
-      textDirection: name == 'mobile' ? TextDirection.ltr : TextDirection.rtl,
+      textDirection: (name == 'mobile' || name == 'nid') ? TextDirection.ltr : TextDirection.rtl,
       decoration: InputDecoration(
         labelText: label, hintText: hint,
         prefixIcon: Icon({
@@ -409,7 +519,13 @@ class _RegistrationFormState extends State<RegistrationForm> {
           'last_name': Icons.badge_outlined,
           'father_name': Icons.people_outline,
           'mobile': Icons.phone_android_outlined,
-          'birth_date': Icons.calendar_month_outlined,
+          'nid': Icons.badge_outlined,
+          'education_level': Icons.school_outlined,
+          'study_place': Icons.menu_book_outlined,
+          'work_place': Icons.work_outline,
+          'military_status': Icons.shield_outlined,
+          'specialty': Icons.workspace_premium_outlined,
+          'interests': Icons.favorite_border_outlined,
           'city': Icons.place_outlined,
           'address': Icons.home_outlined,
           'notes': Icons.notes_outlined,
@@ -419,7 +535,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
         final v = (val ?? '').trim();
         if (required && v.isEmpty) return 'این مورد الزامی است';
         if (name == 'mobile' && !RegExp(r'^09\d{9}$').hasMatch(_digits(v))) return 'شماره همراه باید ۱۱ رقم و با ۰۹ آغاز شود';
-        if (name == 'birth_date' && v.isNotEmpty && !RegExp(r'^(13|14)\d{2}/(0?[1-9]|1[0-2])/(0?[1-9]|[12]\d|3[01])$').hasMatch(_digits(v))) return 'مثال: ۱۳۸۵/۰۵/۱۵';
+        if (name == 'nid' && v.isNotEmpty && !nationalIdValid(_digits(v))) return 'کد ملی ۱۰ رقمی معتبر نیست';
         return null;
       },
     ));
