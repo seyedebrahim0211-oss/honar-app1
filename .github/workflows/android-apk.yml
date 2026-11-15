@@ -7,7 +7,7 @@ on:
     branches: [main, janfada-build-1]
     paths: ['pubspec.yaml', 'lib/**', 'test/**', '.github/workflows/android-apk.yml']
 permissions:
-  contents: read
+  contents: write
 jobs:
   validate-and-build:
     runs-on: ubuntu-latest
@@ -68,3 +68,23 @@ jobs:
           name: janfada-android-optimized-apks
           path: build/app/outputs/flutter-apk/app-*-release.apk
           retention-days: 30
+
+      - name: Publish public preview APKs (direct download links)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p public-downloads
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk public-downloads/JanFada-Android-ARM64.apk
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk public-downloads/JanFada-Android-ARM32.apk
+          sha256sum public-downloads/*.apk | tee public-downloads/SHA256SUMS.txt
+          tag="janfada-v1.0.0-preview"
+          notes="نسخه آزمایشی جان‌فدا ۱.۰ برای ثبت‌نام آفلاین/آنلاین. APKها از خروجی موفق GitHub Actions ساخته شده‌اند؛ دوربین، همگام‌سازی و پیامک روی گوشی واقعی هنوز نیاز به آزمون دارند. این نسخه با امضای آزمایشی ساخته شده است و برای بروزرسانی پایدار باید از کلید انتشار ثابت استفاده شود."
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" public-downloads/* --clobber
+          else
+            gh release create "$tag" public-downloads/* --target "$GITHUB_SHA" --title "جان‌فدا ۱.۰ — دانلود آزمایشی اندروید" --notes "$notes" --prerelease
+          fi
+          gh release view "$tag" --json url,assets --jq '{url:.url,assets:[.assets[].name]}'
