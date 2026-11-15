@@ -31,6 +31,7 @@ class JanFadaApp extends StatelessWidget {
     locale: const Locale('fa', 'IR'),
     theme: ThemeData(
       useMaterial3: true, scaffoldBackgroundColor: cream,
+      fontFamily: 'Vazirmatn',
       colorScheme: ColorScheme.fromSeed(seedColor: green, primary: green, surface: cream),
       appBarTheme: const AppBarTheme(backgroundColor: cream, foregroundColor: ink, centerTitle: true),
       filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)))),
