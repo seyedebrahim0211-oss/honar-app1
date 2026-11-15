@@ -541,52 +541,150 @@ class _RegistrationFormState extends State<RegistrationForm> {
     ));
   @override void dispose() { for (final c in controllers.values) { c.dispose(); } super.dispose(); }
 
-  @override Widget build(BuildContext context) => Form(key: key, child: Center(
-    child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 660), child: ListView(
-    padding: const EdgeInsets.fromLTRB(16, 6, 16, 24), children: [
-      const Padding(padding: EdgeInsetsDirectional.only(start: 6),
-        child: Row(children: [
-          Icon(Icons.edit_note_outlined, color: gold, size: 25),
-          SizedBox(width: 8),
-          Text('مشخصات فردی', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: ink)),
-        ])),
-      const SizedBox(height: 12),
-      field('first_name', 'نام *', required: true),
-      field('last_name', 'نام خانوادگی *', required: true),
-      field('father_name', 'نام پدر'),
-      field('mobile', 'شماره همراه *', required: true, type: TextInputType.phone),
-      field('birth_date', 'تاریخ تولد شمسی', hint: '۱۳۸۵/۰۵/۱۵'),
-      field('city', 'شهر یا روستا *', required: true),
-      field('address', 'نشانی', lines: 2),
-      field('notes', 'توضیحات', lines: 3),
-      const SizedBox(height: 5), const Text('عکس فرد *', style: TextStyle(fontWeight: FontWeight.bold, color: ink)),
-      const SizedBox(height: 8),
-      Container(height: 190, decoration: BoxDecoration(color: Colors.white, border: Border.all(color: gold.withValues(alpha: .5)), borderRadius: BorderRadius.circular(14)),
-        child: image == null ? const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.add_a_photo_outlined, size: 42, color: gold), SizedBox(height: 8), Text('عکس هنوز انتخاب نشده است')]))
-          : ClipRRect(borderRadius: BorderRadius.circular(14), child: Image.memory(image!, fit: BoxFit.contain)),
+  @override Widget build(BuildContext context) => Form(
+    key: key,
+    child: Center(child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 760),
+      child: ListView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.fromLTRB(13, 6, 13, 32),
+        children: [
+          Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.fromLTRB(18, 23, 18, 23),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [
+                Color(0xFF054D41), Color(0xFF0E6B55)]),
+              borderRadius: BorderRadius.circular(23),
+              boxShadow: const [BoxShadow(color: Color(0x22104334),
+                blurRadius: 22, offset: Offset(0, 9))],
+            ),
+            child: const Column(children: [
+              Icon(Icons.auto_stories_outlined, color: Color(0xFFF0D19D), size: 34),
+              SizedBox(height: 9),
+              Text('جان فدا | وارثین',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontWeight: FontWeight.w900,
+                  fontSize: 25, color: Colors.white)),
+              SizedBox(height: 6),
+              Text('شناسایی نیرو برای جذب در گردان امام حسین(ع)',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Color(0xFFF4E5CC),
+                  height: 1.6)),
+              SizedBox(height: 10),
+              Text('اطلاعات فرد را با رضایت و دقت تکمیل کنید.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, color: Color(0xFFD9ECE3))),
+            ]),
+          ),
+          sectionCard('اطلاعات هویتی', Icons.person_outline, [
+            twoFields(
+              field('first_name', 'نام *', required: true),
+              field('last_name', 'نام خانوادگی *', required: true)),
+            twoFields(
+              field('father_name', 'نام پدر'),
+              field('mobile', 'شماره همراه *', required: true,
+                type: TextInputType.phone)),
+            field('nid', 'کد ملی', type: TextInputType.number),
+            birthDatePicker(),
+          ]),
+          sectionCard('تحصیل و اشتغال', Icons.school_outlined, [
+            twoFields(
+              field('city', 'شهر یا روستا *', required: true),
+              choose('آخرین مدرک تحصیلی',
+                controllers['education_level']!.text.isEmpty ? null :
+                  controllers['education_level']!.text,
+                educationOptions, (v) => setState(
+                  () => controllers['education_level']!.text = v ?? ''))),
+            twoFields(
+              field('study_place', 'محل تحصیل'),
+              field('work_place', 'محل کار')),
+            choose('وضعیت نظام وظیفه',
+              controllers['military_status']!.text.isEmpty ? null :
+                controllers['military_status']!.text,
+              militaryOptions, (v) => setState(
+                () => controllers['military_status']!.text = v ?? '')),
+          ]),
+          sectionCard('تخصص و علاقه‌مندی‌ها', Icons.workspace_premium_outlined, [
+            field('specialty', 'تخصص و مهارت‌ها', lines: 2,
+              hint: 'مانند کارهای فرهنگی، اجرایی، فنی، رسانه و ...'),
+            field('interests', 'علاقه‌مندی‌ها', lines: 2,
+              hint: 'زمینه‌هایی که به فعالیت در آن‌ها علاقه دارید'),
+            field('address', 'نشانی', lines: 2),
+            field('notes', 'توضیحات تکمیلی', lines: 2),
+          ]),
+          sectionCard('تصویر فرد', Icons.photo_camera_outlined, [
+            Container(
+              height: 188,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8F5EE),
+                border: Border.all(color: const Color(0xFFDFD2BC)),
+                borderRadius: BorderRadius.circular(17)),
+              child: image == null
+                ? const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.add_photo_alternate_outlined,
+                      color: gold, size: 45),
+                    SizedBox(height: 7),
+                    Text('عکس دلخواه ثبت‌نام‌شونده',
+                      style: TextStyle(color: Color(0xFF697B71), fontSize: 12)),
+                  ]))
+                : Image.memory(image!, fit: BoxFit.contain),
+            ),
+            const SizedBox(height: 12),
+            twoFields(
+              OutlinedButton.icon(
+                onPressed: saving ? null : () => pick(ImageSource.camera),
+                icon: const Icon(Icons.photo_camera_outlined),
+                label: const Text('دوربین گوشی')),
+              OutlinedButton.icon(
+                onPressed: saving ? null : () => pick(ImageSource.gallery),
+                icon: const Icon(Icons.photo_library_outlined),
+                label: const Text('انتخاب از گالری'))),
+            const SizedBox(height: 7),
+            const Text('دوربین معمولی گوشی باز می‌شود؛ سنجش کیفیت و کادربندی هوشمند حذف شده است.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 11, color: Color(0xFF687B6D))),
+          ]),
+          Container(
+            margin: const EdgeInsets.only(bottom: 14),
+            decoration: BoxDecoration(color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE2D6C4))),
+            child: CheckboxListTile(
+              value: consent,
+              activeColor: green,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: const Text(
+                'فرد با ثبت و نگهداری مشخصات و تصویر خود برای مدیریت پویش موافق است.',
+                style: TextStyle(fontSize: 12.5, height: 1.65)),
+              onChanged: saving ? null : (v) =>
+                setState(() => consent = v ?? false),
+            ),
+          ),
+          FilledButton.icon(
+            onPressed: saving ? null : save,
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 18),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(17))),
+            icon: saving
+              ? const SizedBox(width: 19, height: 19,
+                child: CircularProgressIndicator(strokeWidth: 2,
+                  color: Colors.white))
+              : const Icon(Icons.check_circle_outline),
+            label: Text(saving ? 'در حال ذخیره پرونده…' :
+              widget.initial == null ? 'ثبت پرونده جدید' : 'ذخیره تغییرات'),
+          ),
+          const SizedBox(height: 12),
+          const Text('ثبت آفلاین با نگهداری رمزنگاری‌شده انجام می‌شود. پس از ارسال موفق به سایت، پیامک تأیید برای فرد ارسال خواهد شد.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11.5,
+              color: Color(0xFF62796D), height: 1.85)),
+        ],
       ),
-      const SizedBox(height: 10),
-      const Text('عکس دلخواه را با دوربین معمولی گوشی بگیرید یا از گالری انتخاب کنید؛ بررسی هوشمند و محدودیت کادربندی حذف شد.', style: TextStyle(fontSize: 12, color: ink)),
-      const SizedBox(height: 8),
-      Row(children: [
-        Expanded(child: OutlinedButton.icon(onPressed: () => pick(ImageSource.camera), icon: const Icon(Icons.camera_alt_outlined), label: const Text('دوربین معمولی گوشی'))),
-        const SizedBox(width: 9),
-        Expanded(child: OutlinedButton.icon(onPressed: () => pick(ImageSource.gallery), icon: const Icon(Icons.photo_library_outlined), label: const Text('گالری'))),
-      ]),
-      CheckboxListTile(
-        contentPadding: EdgeInsets.zero, value: consent, activeColor: green,
-        title: const Text('فرد با ثبت و نگهداری مشخصات و تصویر خود برای مدیریت پویش موافقت کرده است.', style: TextStyle(fontSize: 13)),
-        onChanged: (v) => setState(() => consent = v ?? false),
-      ),
-      const SizedBox(height: 6),
-      FilledButton.icon(onPressed: saving ? null : save,
-        icon: const Icon(Icons.save_alt_outlined), label: Text(saving ? 'در حال ذخیره‌سازی...' : (widget.initial == null ? 'ثبت و ذخیره پرونده' : 'ذخیره تغییرات'))),
-      const SizedBox(height: 8),
-      const Text('در حالت آفلاین اطلاعات روی گوشی ذخیره می‌شود. پس از ارسال موفق در سایت، پیامک تأیید برای شماره همراه ارسال می‌شود. متن پیامک از پنل مدیریت قابل تنظیم است.',
-        textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Colors.black54)),
-    ],
-  ))));
+    )),
+  );
 }
 
 class RecordsView extends StatefulWidget {
