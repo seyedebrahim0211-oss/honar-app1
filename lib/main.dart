@@ -389,6 +389,13 @@ class _RegistrationFormState extends State<RegistrationForm> {
         'birth_date': birthYear == null ? '' :
           birthYear! + '/' + monthNumber.toString().padLeft(2, '0') + '/' + birthDay!,
       };
+      // Catch duplicates on this device even while offline; the server independently
+      // enforces the same rule across all registrars when syncing.
+      if (await LocalStore.instance.isNationalIdDuplicate(
+            d['nid']!, excludeId: widget.initial?.id)) {
+        _message('این کد ملی قبلاً روی این گوشی ثبت شده است. پرونده جدید ساخته نمی‌شود.');
+        return;
+      }
       if (widget.initial == null && await LocalStore.instance.isDuplicate(d['first_name']!, d['last_name']!, d['mobile']!)) {
         if (!mounted) return;
         final proceed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
@@ -600,7 +607,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
         final v = (val ?? '').trim();
         if (required && v.isEmpty) return 'این مورد الزامی است';
         if (name == 'mobile' && !RegExp(r'^09\d{9}$').hasMatch(_digits(v))) return 'شماره همراه باید ۱۱ رقم و با ۰۹ آغاز شود';
-        if (name == 'nid' && v.isNotEmpty && !nationalIdValid(_digits(v))) return 'کد ملی ۱۰ رقمی معتبر نیست';
+        if (name == 'nid' && !nationalIdValid(_digits(v))) return 'کد ملی ۱۰ رقمی معتبر نیست';
         return null;
       },
     ));
@@ -650,7 +657,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
               field('father_name', 'نام پدر'),
               field('mobile', 'شماره همراه *', required: true,
                 type: TextInputType.phone)),
-            field('nid', 'کد ملی', type: TextInputType.number),
+            field('nid', 'کد ملی *', required: true, type: TextInputType.number),
             birthDatePicker(),
           ]),
           sectionCard('تحصیل و اشتغال', Icons.school_outlined, [
