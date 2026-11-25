@@ -30,6 +30,12 @@ class Registrant {
   final String created;
   String get name => '${data['first_name'] ?? ''} ${data['last_name'] ?? ''}'.trim();
   String get mobile => data['mobile'] ?? '';
+  String get statusLabel => switch (status) {
+    'synced' => 'ثبت‌شده در سایت',
+    'invalid' => 'نیازمند اصلاح فرم',
+    'error' => 'ارسال ناموفق',
+    _ => 'ذخیره آفلاین؛ ارسال نشده',
+  };
   Registrant updated({String? status, String? code, String? error}) => Registrant(
     id: id, data: data, photo: photo, status: status ?? this.status, code: code ?? this.code,
     error: error ?? this.error, created: created,
@@ -146,13 +152,33 @@ class LocalStore {
   Future<void> close() async => _db?.close();
 }
 
+const formFieldLabels = <String, String>{
+  'first_name': 'نام', 'last_name': 'نام خانوادگی', 'father_name': 'نام پدر',
+  'mobile': 'شماره همراه', 'nid': 'کد ملی', 'birth_year': 'سال تولد',
+  'birth_month': 'ماه تولد', 'birth_day': 'روز تولد', 'birth_date': 'تاریخ تولد',
+  'city': 'شهر یا روستا', 'education_level': 'مدرک تحصیلی',
+  'study_place': 'محل تحصیل', 'work_place': 'محل کار',
+  'military_status': 'وضعیت نظام وظیفه', 'specialty': 'تخصص و مهارت‌ها',
+  'interests': 'علاقه‌مندی‌ها', 'address': 'نشانی', 'notes': 'توضیحات',
+  'photo': 'عکس فرد', 'consent': 'رضایت آگاهانه', 'device_uid': 'شناسه ثبت',
+};
+
+String readableFormError(Map<String, dynamic> decoded, int status) {
+  final fields = decoded['errors'];
+  if (fields is Map && fields.isNotEmpty) {
+    return fields.entries.map((entry) =>
+      '${formFieldLabels[entry.key] ?? entry.key}: ${entry.value}').join('\n');
+  }
+  return (decoded['message'] ?? 'خطای سرور ($status)').toString();
+}
+
 class FormSync {
   FormSync(this.store);
   final LocalStore store;
   bool busy = false;
-  Future<int> pendingCount() async => (await store.all()).where((r) => r.status != 'synced').length;
+  Future<int> pendingCount() async => (await store.all()).where((r) => r.status == 'pending').length;
 
-  Future<(int synced, int failed)> sync() async {
+  Future<(int synced, int failed)> sync({bool retryErrors = false}) async {
     if (busy) return (0, 0);
     busy = true;
     var success = 0, failed = 0;
@@ -160,7 +186,7 @@ class FormSync {
       final session = await StaffAuth.instance.token();
       if (session == null || session.isEmpty) return (0, 0);
       final authHeaders = await StaffAuth.instance.sessionHeaders();
-      final records = (await store.all()).where((r) => r.status != 'synced').toList();
+      final records = (await store.all()).where((r) => r.status == 'pending' || (retryErrors && r.status == 'error')).toList();
       for (final record in records) {
         try {
           final req = http.MultipartRequest('POST', Uri.parse(submitUrl));
@@ -194,62 +220,72 @@ class FormSync {
           late String body;
           try {
             response = await client.send(req).timeout(const Duration(seconds: 50));
-            body = await response.stream.bytesToString();
+            body = await response.stream.bytesToString().timeout(const Duration(seconds: 50));
           } finally { client.close(); }
-          final decoded = jsonDecode(body) as Map<String, dynamic>;
-          if (response.statusCode == 401 || response.statusCode == 403) {
+          Map<String, dynamic> decoded = {};
+          try { final value = jsonDecode(body); if (value is Map<String, dynamic>) decoded = value; } catch (_) {}
+          if (response.statusCode == 401) {
             await StaffAuth.instance.clearSession();
             await store.update(record.updated(status: 'error', error: 'دسترسی این شماره منقضی یا لغو شده است. دوباره با پیامک وارد شوید.'));
             failed++;
             break;
-          } else if (response.statusCode == 200 && decoded['ok'] == true) {
-            await store.update(record.updated(status: 'synced', code: (decoded['code'] ?? '').toString(), error: ''));
+          } else if (response.statusCode >= 200 && response.statusCode < 300 &&
+              decoded['ok'] == true && (decoded['code'] ?? '').toString().isNotEmpty) {
+            await store.update(record.updated(status: 'synced', code: decoded['code'].toString(), error: ''));
             success++;
-          } else if (response.statusCode == 422 && decoded['errors'] is Map &&
-              (decoded['errors'] as Map).containsKey('device_uid')) {
-            // The first submission may have succeeded but its HTTP reply was lost.
-            // Only the authenticated receipt endpoint can confirm the real code.
-            final client = http.Client();
-            String? code;
-            try {
-              final check = await client.get(
-                Uri.parse('https://honarmardomi.ir/wp-json/negarform/v1/janfada/receipt/${record.id}'),
-                headers: authHeaders,
-              ).timeout(const Duration(seconds: 20));
-              if (check.statusCode == 200) {
-                final answer = jsonDecode(check.body) as Map<String, dynamic>;
-                if (answer['ok'] == true) code = answer['code']?.toString();
-              }
-            } finally { client.close(); }
-            if (code != null && code.isNotEmpty) {
+          } else {
+            // A duplicate national ID or a lost response may be our own committed record.
+            // Never treat a different registrant's national ID as proof of success.
+            final code = await _receipt(record.id, authHeaders);
+            if (code != null) {
               await store.update(record.updated(status: 'synced', code: code, error: ''));
               success++;
             } else {
-              final errors = decoded['errors'] as Map;
-              final conflict = errors['nid'];
-              await store.update(record.updated(status: 'error', error:
-                conflict != null ? 'کد ملی: $conflict' : 'رسید قبلی هنوز تأیید نشده است.'));
+              final invalid = response.statusCode == 422 || response.statusCode == 409 ||
+                  response.statusCode == 400;
+              await store.update(record.updated(status: invalid ? 'invalid' : 'error',
+                error: decoded.isEmpty && response.statusCode < 300
+                  ? 'پاسخ ثبت قابل تأیید نیست؛ رسید سرور پیدا نشد.'
+                  : readableFormError(decoded, response.statusCode)));
               failed++;
+              if (response.statusCode == 429 || response.statusCode >= 500) break;
             }
-          } else {
-            final errorFields = decoded['errors'];
-            final nationalIdError = errorFields is Map ? errorFields['nid'] : null;
-            final readableError = nationalIdError != null
-              ? 'کد ملی: $nationalIdError'
-              : (decoded['message'] ?? 'خطای سرور ${response.statusCode}').toString();
-            await store.update(record.updated(status: 'error', error: readableError));
-            failed++;
-            if (response.statusCode == 429 || response.statusCode >= 500) break;
           }
           if (success > 0) await Future<void>.delayed(const Duration(milliseconds: 300));
         } catch (e) {
-          await store.update(record.updated(status: 'error', error: 'ارسال ممکن نشد؛ پرونده آفلاین محفوظ است.'));
-          failed++;
-          break; // Network unavailable: do not hammer server.
+          final code = await _receipt(record.id, authHeaders);
+          if (code != null) {
+            await store.update(record.updated(status: 'synced', code: code, error: ''));
+            success++;
+          } else {
+            await store.update(record.updated(status: 'error', error:
+              e is FileSystemException ? 'فایل عکس قابل خواندن نیست؛ عکس پرونده را بررسی کنید.' :
+              'ارتباط یا پاسخ سرور ناموفق بود؛ رسید ثبت تأیید نشد. پرونده در گوشی محفوظ است.'));
+            failed++;
+            break;
+          }
         }
       }
     } finally { busy = false; }
     return (success, failed);
+  }
+
+  Future<String?> _receipt(String id, Map<String, String> headers) async {
+    final client = http.Client();
+    try {
+      final result = await client.get(
+        Uri.parse('https://honarmardomi.ir/wp-json/negarform/v1/janfada/receipt/$id'),
+        headers: headers).timeout(const Duration(seconds: 12));
+      if (result.statusCode == 200) {
+        final json = jsonDecode(result.body);
+        if (json is Map && json['ok'] == true) {
+          final code = (json['code'] ?? '').toString();
+          if (code.isNotEmpty) return code;
+        }
+      }
+    } catch (_) { /* No confirmed receipt. */ }
+    finally { client.close(); }
+    return null;
   }
 }
 
@@ -263,7 +299,7 @@ class DossierExporter {
   DossierExporter(this.store);
   final LocalStore store;
   static const _headers = <String>[
-    'شناسه آفلاین','کد نگارفرم','وضعیت ارسال','نام','نام خانوادگی',
+    'شناسه آفلاین','کد نگارفرم','وضعیت ارسال','علت خطا','نام','نام خانوادگی',
     'نام پدر','شماره همراه','کد ملی','تاریخ تولد یکپارچه','سال تولد',
     'ماه تولد','روز تولد','شهر یا روستا','مدرک تحصیلی',
     'محل تحصیل','محل کار','وضعیت نظام وظیفه','تخصص و مهارت‌ها',
@@ -295,14 +331,15 @@ class DossierExporter {
       final r = people[i];
       final photoName = 'images/${r.id}.jpg';
       summary.appendRow(_cells([
-        r.id, r.code, r.status == 'synced' ? 'ارسال‌شده' : 'در انتظار ارسال',
+        r.id, r.code, r.statusLabel, r.error,
         ..._fieldKeys.map((k) => r.data[k] ?? ''), photoName, r.created,
       ]));
       final sheet = book['پرونده ${i + 1}'];
       sheet.appendRow(_cells(['پرونده اختصاصی پویش جان‌فدا', r.name]));
       sheet.appendRow(_cells(['کد رهگیری نگارفرم', r.code]));
       sheet.appendRow(_cells(['شناسه دستگاه', r.id]));
-      sheet.appendRow(_cells(['وضعیت', r.status == 'synced' ? 'ثبت‌شده در سایت' : 'آفلاین']));
+      sheet.appendRow(_cells(['وضعیت', r.statusLabel]));
+      sheet.appendRow(_cells(['علت خطا', r.error]));
       for (var j = 0; j < _fieldKeys.length; j++) {
         sheet.appendRow(_cells([_fieldLabels[j], r.data[_fieldKeys[j]] ?? '']));
       }
@@ -315,6 +352,25 @@ class DossierExporter {
       } catch (_) {
         sheet.appendRow(_cells(['هشدار تصویر', 'فایل تصویر در حافظه یافت نشد']));
       }
+    }
+    final header = CellStyle(
+      backgroundColorHex: ExcelColor.fromHexString('#075747'),
+      fontColorHex: ExcelColor.fromHexString('#FFFFFF'),
+      bold: true, horizontalAlign: HorizontalAlign.Center);
+    for (var c = 0; c < _headers.length; c++) {
+      summary.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 0)).cellStyle = header;
+      summary.setColumnWidth(c, c == 0 || c == 3 ? 38 : 21);
+    }
+    for (var row = 1; row <= people.length; row++) {
+      final r = people[row - 1];
+      summary.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row)).cellStyle = CellStyle(
+        backgroundColorHex: ExcelColor.fromHexString(r.status == 'synced' ? '#DCEFE5' :
+          r.status == 'pending' ? '#FFF1CF' : '#FCE1DF'), bold: true);
+      final detail = book['پرونده $row'];
+      detail.setColumnWidth(0, 33);
+      detail.setColumnWidth(1, 54);
+      detail.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0)).cellStyle = header;
+      detail.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0)).cellStyle = header;
     }
     final output = book.encode();
     if (output == null) throw StateError('ساخت اکسل ناموفق بود.');

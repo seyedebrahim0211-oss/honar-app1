@@ -185,19 +185,26 @@ class _DashboardState extends State<Dashboard> {
     if (online && !wasOnline) _sync();
   }
   Future<void> _refresh() async { final list = await store.all(); if (mounted) setState(() => people = list); }
-  Future<void> _sync() async {
-    if (syncing || !online) return;
+  Future<void> _sync({bool retryErrors = false}) async {
+    if (syncing) return;
+    if (!online) { if (retryErrors && mounted) _info('اینترنت در دسترس نیست؛ اطلاعات و خروجی اکسل آفلاین محفوظ است.'); return; }
     if ((await StaffAuth.instance.token() ?? '').isEmpty) {
       if (mounted) await _phoneLogin();
       if ((await StaffAuth.instance.token() ?? '').isEmpty) return;
     }
     if (!mounted) return;
     setState(() => syncing = true);
-    final result = await syncService.sync();
-    await _refresh();
-    if (mounted) {
-      setState(() => syncing = false);
-      if (result.$1 > 0 || result.$2 > 0) _info('${result.$1} پرونده ارسال شد؛ ${result.$2} مورد نیازمند تلاش مجدد است.');
+    try {
+      final result = await syncService.sync(retryErrors: retryErrors);
+      await _refresh();
+      if (mounted && (result.$1 > 0 || result.$2 > 0)) {
+        final errors = people.where((p) => p.status == 'invalid' || p.status == 'error');
+        _info('${result.$1} ثبت قطعی؛ ${result.$2} ناموفق. ${errors.isEmpty ? '' : errors.first.error}');
+      }
+    } catch (_) {
+      if (mounted) _info('بررسی وضعیت ارسال ممکن نشد. اطلاعات محلی محفوظ است.');
+    } finally {
+      if (mounted) setState(() => syncing = false);
     }
   }
   void _info(String message) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message))); }
@@ -251,7 +258,8 @@ class _DashboardState extends State<Dashboard> {
   void dispose() { internetSubscription?.cancel(); retryTimer?.cancel(); super.dispose(); }
 
   @override Widget build(BuildContext context) {
-    final pending = people.where((p) => p.status != 'synced').length;
+    final pending = people.where((p) => p.status == 'pending').length;
+    final errors = people.where((p) => p.status == 'invalid' || p.status == 'error').length;
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 82,
@@ -283,15 +291,17 @@ class _DashboardState extends State<Dashboard> {
             Row(children: [
               _counter('کل ثبت‌نام‌ها', people.length.toString()),
               const SizedBox(width: 12),
-              _counter('در انتظار ارسال', pending.toString()),
+              _counter('آفلاین', pending.toString()),
+              const SizedBox(width: 6),
+              _counter('خطا', errors.toString()),
               const SizedBox(width: 12),
-              _counter('ثبت‌شده در سایت', (people.length - pending).toString()),
+              _counter('ثبت‌شده در سایت', (people.length - pending - errors).toString()),
             ]),
           ])),
         Expanded(child: selected == 0
           ? RegistrationForm(onSaved: () async { await _refresh(); if (online) _sync(); })
-          : RecordsView(people: people, onSync: _sync, syncing: syncing,
-              export: _export, exporting: exporting, onReload: _refresh)),
+          : RecordsView(people: people, onSync: () => _sync(retryErrors: true), syncing: syncing,
+              export: _export, exporting: exporting, onReload: () async { await _refresh(); if (online) await _sync(); })),
       ])),
       bottomNavigationBar: NavigationBar(
         height: 74, backgroundColor: Colors.white, selectedIndex: selected,
@@ -365,9 +375,30 @@ class _RegistrationFormState extends State<RegistrationForm> {
     }
   }
   Future<void> save() async {
-    if (!key.currentState!.validate()) return;
-    final hasSomeBirth = birthYear != null || birthMonth != null || birthDay != null;
-    if (hasSomeBirth && (birthYear == null || birthMonth == null || birthDay == null)) {
+    if (saving) return;
+    // ListView can dispose off-screen form fields; validate every controller too.
+    final visibleValid = key.currentState!.validate();
+    final missing = controllers.entries.where((e) => e.value.text.trim().isEmpty)
+      .map((e) => formFieldLabels[e.key] ?? e.key).toList();
+    if (birthYear == null) missing.add('سال تولد');
+    if (birthMonth == null) missing.add('ماه تولد');
+    if (birthDay == null) missing.add('روز تولد');
+    if (image == null) missing.add('عکس فرد');
+    if (!consent) missing.add('رضایت آگاهانه');
+    if (missing.isNotEmpty) {
+      _message('موارد الزامی تکمیل نشده: ${missing.join('، ')}');
+      return;
+    }
+    if (!RegExp(r'^09\d{9}$').hasMatch(_digits(controllers['mobile']!.text.trim()))) {
+      _message('شماره همراه باید ۱۱ رقم و با ۰۹ آغاز شود.'); return;
+    }
+    if (!nationalIdValid(_digits(controllers['nid']!.text.trim()))) {
+      _message('کد ملی ۱۰ رقمی معتبر نیست.'); return;
+    }
+    if (!visibleValid) {
+      _message('موارد مشخص‌شده در فرم را اصلاح کنید.'); return;
+    }
+    if (birthYear == null || birthMonth == null || birthDay == null) {
       _message('تاریخ تولد را با هر سه بخش سال، ماه و روز کامل کنید.');
       return;
     }
@@ -423,7 +454,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
     final c = m.group(0)!.codeUnitAt(0);
     return ((c >= 0x6f0 && c <= 0x6f9) ? c - 0x6f0 : c - 0x660).toString();
   });
-  void _message(String s) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s)));
+  void _message(String s) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s), duration: const Duration(seconds: 7))); }
 
   int get _maxDays {
     final m = birthMonth == null ? 0 : monthNames.indexOf(birthMonth!) + 1;
@@ -452,9 +483,10 @@ class _RegistrationFormState extends State<RegistrationForm> {
         value: values.contains(current) ? current : null,
         isExpanded: true,
         decoration: InputDecoration(
-          labelText: label, prefixIcon: const Icon(Icons.arrow_drop_down_circle_outlined)),
+          labelText: '$label *', prefixIcon: const Icon(Icons.arrow_drop_down_circle_outlined)),
         items: values.map((v) => DropdownMenuItem(value: v, child: Text(v,
           overflow: TextOverflow.ellipsis))).toList(),
+        validator: (v) => v == null || v.isEmpty ? 'انتخاب این مورد الزامی است' : null,
         onChanged: onSelected,
       ));
 
@@ -511,7 +543,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
     crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const Padding(
         padding: EdgeInsets.fromLTRB(3, 2, 3, 11),
-        child: Text('تاریخ تولد شمسی — سال، ماه و روز',
+        child: Text('تاریخ تولد شمسی * — سال، ماه و روز',
           textAlign: TextAlign.center,
           style: TextStyle(color: ink, fontSize: 13,
             fontWeight: FontWeight.w800)),
@@ -519,7 +551,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Expanded(flex: 4, child: _birthSelect(
           'سال تولد', birthYear,
-          List.generate(106, (i) => (1405 - i).toString()),
+          List.generate(111, (i) => (1405 - i).toString()),
           (v) => setState(() {
             birthYear = v;
             if (birthDay != null && int.parse(birthDay!) > _maxDays) {
@@ -580,12 +612,12 @@ class _RegistrationFormState extends State<RegistrationForm> {
         Expanded(child: a), const SizedBox(width: 12), Expanded(child: b)])
       : Column(children: [a, b]));
 
-  Widget field(String name, String label, {bool required = false, int lines = 1, TextInputType? type, String? hint}) =>
+  Widget field(String name, String label, {bool required = true, int lines = 1, TextInputType? type, String? hint}) =>
     Padding(padding: const EdgeInsets.only(bottom: 13), child: TextFormField(
       controller: controllers[name], keyboardType: type, maxLines: lines,
       textDirection: (name == 'mobile' || name == 'nid') ? TextDirection.ltr : TextDirection.rtl,
       decoration: InputDecoration(
-        labelText: label, hintText: hint,
+        labelText: required && !label.endsWith('*') ? '$label *' : label, hintText: hint,
         prefixIcon: Icon({
           'first_name': Icons.person_outline,
           'last_name': Icons.badge_outlined,
@@ -669,8 +701,8 @@ class _RegistrationFormState extends State<RegistrationForm> {
                 educationOptions, (v) => setState(
                   () => controllers['education_level']!.text = v ?? ''))),
             twoFields(
-              field('study_place', 'محل تحصیل'),
-              field('work_place', 'محل کار')),
+              field('study_place', 'محل تحصیل', hint: 'در صورت نداشتن، بنویسید ندارد'),
+              field('work_place', 'محل کار', hint: 'در صورت نداشتن، بنویسید ندارد')),
             choose('وضعیت نظام وظیفه',
               controllers['military_status']!.text.isEmpty ? null :
                 controllers['military_status']!.text,
@@ -683,9 +715,9 @@ class _RegistrationFormState extends State<RegistrationForm> {
             field('interests', 'علاقه‌مندی‌ها', lines: 2,
               hint: 'زمینه‌هایی که به فعالیت در آن‌ها علاقه دارید'),
             field('address', 'نشانی', lines: 2),
-            field('notes', 'توضیحات تکمیلی', lines: 2),
+            field('notes', 'توضیحات تکمیلی', lines: 2, hint: 'در صورت نداشتن، بنویسید ندارد'),
           ]),
-          sectionCard('تصویر فرد', Icons.photo_camera_outlined, [
+          sectionCard('تصویر فرد *', Icons.photo_camera_outlined, [
             Container(
               height: 188,
               clipBehavior: Clip.antiAlias,
@@ -749,7 +781,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
               widget.initial == null ? 'ثبت پرونده جدید' : 'ذخیره تغییرات'),
           ),
           const SizedBox(height: 12),
-          const Text('ثبت آفلاین با نگهداری رمزنگاری‌شده انجام می‌شود. پس از ارسال موفق به سایت، پیامک تأیید برای فرد ارسال خواهد شد.',
+          const Text('ثبت آفلاین با نگهداری رمزنگاری‌شده انجام می‌شود. پس از ثبت قطعی در سایت، وضعیت اعلان‌ها جداگانه در سرور پیگیری می‌شود.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11.5,
               color: Color(0xFF62796D), height: 1.85)),
@@ -786,7 +818,7 @@ class _RecordsViewState extends State<RecordsView> {
         )),
         const SizedBox(width: 8),
         Expanded(child: FilledButton.icon(
-          onPressed: widget.exporting || items.isEmpty ? null : widget.export,
+          onPressed: widget.exporting || widget.people.isEmpty ? null : widget.export,
           icon: const Icon(Icons.table_view_outlined), label: const Text('خروجی اکسل'),
         )),
       ])),
@@ -794,12 +826,13 @@ class _RecordsViewState extends State<RecordsView> {
         itemCount: items.length, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         itemBuilder: (ctx, i) {
           final r = items[i]; final saved = r.status == 'synced';
+           final failed = r.status == 'error' || r.status == 'invalid';
           return Card(color: Colors.white, elevation: 0, child: ListTile(
             leading: CircleAvatar(backgroundColor: saved ? const Color(0xFFE5F3EF) : const Color(0xFFFDF0D8),
-              child: Icon(saved ? Icons.cloud_done : Icons.cloud_upload_outlined, color: saved ? green : gold)),
+              child: Icon(saved ? Icons.cloud_done : failed ? Icons.error_outline : Icons.cloud_upload_outlined, color: saved ? green : failed ? Colors.red : gold)),
             title: Text(r.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text('${r.mobile}   •   ${saved ? 'ثبت‌شده در سایت' : 'در انتظار ارسال'}${r.code.isEmpty ? '' : '\nکد: ${r.code}'}'),
-            isThreeLine: r.code.isNotEmpty,
+            subtitle: Text('${r.mobile}   •   ${r.statusLabel}${r.code.isEmpty ? '' : '\nکد: ${r.code}'}${r.error.isEmpty ? '' : '\n${r.error}'}'),
+            isThreeLine: r.code.isNotEmpty || r.error.isNotEmpty,
             trailing: const Icon(Icons.chevron_left),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RecordDetail(record: r, onEdited: widget.onReload))),
           ));
@@ -831,7 +864,7 @@ class _RecordDetailState extends State<RecordDetail> {
         Card(child: Padding(padding: const EdgeInsets.all(15), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('شناسه آفلاین: ${r.id}', style: const TextStyle(fontSize: 12)),
           Text('کد نگارفرم: ${r.code.isEmpty ? 'هنوز ثبت نشده' : r.code}'),
-          Text(r.status == 'synced' ? 'وضعیت: ارسال شده' : 'وضعیت: در انتظار ارسال', style: TextStyle(color: r.status == 'synced' ? green : Colors.deepOrange)),
+          Text('وضعیت: ${r.statusLabel}', style: TextStyle(color: r.status == 'synced' ? green : Colors.deepOrange)),
           if (r.error.isNotEmpty) Text(r.error, style: const TextStyle(fontSize: 12, color: Colors.deepOrange)),
         ]))),
         if (r.status != 'synced') Padding(padding: const EdgeInsets.symmetric(vertical: 8),
