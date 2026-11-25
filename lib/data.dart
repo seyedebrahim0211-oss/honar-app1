@@ -56,6 +56,34 @@ class Registrant {
   );
 }
 
+String normalizeNationalId(String value) {
+  final ascii = value.replaceAllMapped(RegExp(r'[۰-۹٠-٩]'), (m) {
+    final c = m.group(0)!.codeUnitAt(0);
+    return (c >= 0x6f0 ? c - 0x6f0 : c - 0x660).toString();
+  });
+  return ascii.replaceAll(RegExp(r'[\s\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF-]'), '');
+}
+
+String? nationalIdError(String value) {
+  final id = normalizeNationalId(value);
+  if (id.isEmpty) return 'کد ملی الزامی است.';
+  if (!RegExp(r'^[0-9]{10}$').hasMatch(id)) {
+    return 'کد ملی باید دقیقاً ۱۰ رقم باشد؛ صفر ابتدای کد را وارد کنید.';
+  }
+  if (RegExp(r'^([0-9])\1{9}$').hasMatch(id)) {
+    return 'کد ملی با ۱۰ رقم یکسان معتبر نیست.';
+  }
+  var sum = 0;
+  for (var i = 0; i < 9; i++) {
+    sum += int.parse(id[i]) * (10 - i);
+  }
+  final remainder = sum % 11;
+  if (int.parse(id[9]) != (remainder < 2 ? remainder : 11 - remainder)) {
+    return 'رقم کنترل کد ملی صحیح نیست؛ کد را با کارت ملی تطبیق دهید.';
+  }
+  return null;
+}
+
 class LocalStore {
   LocalStore._();
   static final instance = LocalStore._();
@@ -138,11 +166,11 @@ class LocalStore {
     await _db!.update('registrants', reg.toDb(), where: 'id=?', whereArgs: [reg.id]);
   }
   Future<bool> isNationalIdDuplicate(String nationalId, {String? excludeId}) async {
-    final digits = nationalId.trim();
+    final digits = normalizeNationalId(nationalId);
     if (digits.isEmpty) return false;
     final records = await all();
     return records.any((r) => r.id != excludeId &&
-      (r.data['nid'] ?? '').trim() == digits);
+      normalizeNationalId(r.data['nid'] ?? '') == digits);
   }
 
   Future<bool> isDuplicate(String first, String last, String mobile) async {
@@ -178,7 +206,7 @@ class FormSync {
   bool busy = false;
   Future<int> pendingCount() async => (await store.all()).where((r) => r.status == 'pending').length;
 
-  Future<(int synced, int failed)> sync({bool retryErrors = false}) async {
+  Future<(int synced, int failed)> sync({bool retryErrors = false, String? recordId, bool retryInvalid = false}) async {
     if (busy) return (0, 0);
     busy = true;
     var success = 0, failed = 0;
@@ -186,15 +214,34 @@ class FormSync {
       final session = await StaffAuth.instance.token();
       if (session == null || session.isEmpty) return (0, 0);
       final authHeaders = await StaffAuth.instance.sessionHeaders();
-      final records = (await store.all()).where((r) => r.status == 'pending' || (retryErrors && r.status == 'error')).toList();
+      final records = (await store.all()).where((r) =>
+        (recordId == null || r.id == recordId) &&
+        (r.status == 'pending' || (retryErrors && r.status == 'error') ||
+          (retryInvalid && r.status == 'invalid'))).toList().reversed;
+
       for (final record in records) {
         try {
+          // Recover the receipt before retrying any previously failed submission.
+          if (record.status != 'pending') {
+            final code = await _receipt(record.id, authHeaders);
+            if (code != null) {
+              await store.update(record.updated(status: 'synced', code: code, error: ''));
+              success++;
+              continue;
+            }
+          }
+          final idError = nationalIdError(record.data['nid'] ?? '');
+          if (idError != null) {
+            await store.update(record.updated(status: 'invalid', error: idError));
+            failed++;
+            continue;
+          }
           final req = http.MultipartRequest('POST', Uri.parse(submitUrl));
           req.headers.addAll(authHeaders);
           for (final entry in record.data.entries) {
             if (entry.key != 'consent' && entry.key != 'activity' &&
                 entry.key != 'birth_date' && entry.value.trim().isNotEmpty) {
-              req.fields[entry.key] = entry.value;
+              req.fields[entry.key] = entry.key == 'nid' ? normalizeNationalId(entry.value) : entry.value;
             }
           }
           // Upgrade earlier offline records that stored a single Jalali date.
