@@ -66,16 +66,94 @@ jobs:
           name: janfada-android-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 30
+      - name: Configure persistent release signing
+        id: signing
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          JANFADA_KEYSTORE_B64: ${{ secrets.JANFADA_KEYSTORE_B64 }}
+          JANFADA_STORE_PASSWORD: ${{ secrets.JANFADA_STORE_PASSWORD }}
+          JANFADA_KEY_ALIAS: ${{ secrets.JANFADA_KEY_ALIAS }}
+          JANFADA_KEY_PASSWORD: ${{ secrets.JANFADA_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$JANFADA_KEYSTORE_B64" ] || [ -z "$JANFADA_STORE_PASSWORD" ] || [ -z "$JANFADA_KEY_ALIAS" ] || [ -z "$JANFADA_KEY_PASSWORD" ]; then
+            echo "::warning::Original persistent signing key is not configured. Validation build only."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          umask 077
+          printf '%s' "$JANFADA_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/janfada-release.jks"
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('android/app/build.gradle.kts')
+          t = p.read_text()
+          marker = '    buildTypes {'
+          old = 'signingConfig = signingConfigs.getByName("debug")'
+          assert marker in t and old in t, 'Unexpected Gradle template; refusing debug signing.'
+          t = t.replace(marker, '''    signingConfigs {
+                  create("janfadaRelease") {
+                      storeFile = file(System.getenv("RUNNER_TEMP") + "/janfada-release.jks")
+                      storePassword = System.getenv("JANFADA_STORE_PASSWORD")
+                      keyAlias = System.getenv("JANFADA_KEY_ALIAS")
+                      keyPassword = System.getenv("JANFADA_KEY_PASSWORD")
+                  }
+              }
+          ''' + marker, 1)
+          t = t.replace(old, 'signingConfig = signingConfigs.getByName("janfadaRelease")', 1)
+          p.write_text(t)
+          PY
+          echo "configured=true" >> "$GITHUB_OUTPUT"
       - name: Build compact release APKs for each CPU
+        env:
+          JANFADA_STORE_PASSWORD: ${{ secrets.JANFADA_STORE_PASSWORD }}
+          JANFADA_KEY_ALIAS: ${{ secrets.JANFADA_KEY_ALIAS }}
+          JANFADA_KEY_PASSWORD: ${{ secrets.JANFADA_KEY_PASSWORD }}
         run: flutter build apk --release --split-per-abi
+      - name: Verify APK signatures and upgrade compatibility
+        id: compatibility
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          signer="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n1)"
+          aapt="$(dirname "$signer")/aapt"
+          test -x "$signer" && test -x "$aapt"
+          mkdir -p reference-apks/133 reference-apks/132
+          gh release download janfada-v1.3.3 --pattern 'JanFada-Android-ARM*.apk' --dir reference-apks/133
+          gh release download janfada-v1.3.2-national-id --pattern 'JanFada-Android-ARM*.apk' --dir reference-apks/132
+          export SIGNER="$signer" AAPT="$aapt"
+          python3 - <<'PY'
+          import os, re, subprocess
+          from pathlib import Path
+          def identity(path):
+              cert = subprocess.check_output([os.environ['SIGNER'], 'verify', '--print-certs', str(path)], text=True)
+              hashes = sorted(re.findall(r'Signer #\d+ certificate SHA-256 digest:\s*([0-9a-fA-F]+)', cert))
+              if not hashes:
+                  raise RuntimeError('No verified signer: ' + str(path))
+              badging = subprocess.check_output([os.environ['AAPT'], 'dump', 'badging', str(path)], text=True)
+              pkg, version = re.search(r"package: name='([^']+)' versionCode='(\d+)'", badging).groups()
+              print(path.name, pkg, version, ','.join(hashes))
+              return pkg, int(version), hashes
+          compatible = True
+          for abi, suffix in [('arm64-v8a','ARM64'), ('armeabi-v7a','ARM32')]:
+              pkg, version, cert = identity(Path('build/app/outputs/flutter-apk') / ('app-' + abi + '-release.apk'))
+              for ref in ['133', '132']:
+                  oldpkg, oldversion, oldcert = identity(Path('reference-apks') / ref / ('JanFada-Android-' + suffix + '.apk'))
+                  if not (pkg == oldpkg and version > oldversion and cert == oldcert):
+                      compatible = False
+                      print('::warning::Update compatibility failed for ' + suffix + ' against reference ' + ref)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write('compatible=' + str(compatible).lower() + '\n')
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: janfada-android-optimized-apks
           path: build/app/outputs/flutter-apk/app-*-release.apk
           retention-days: 30
 
-      - name: Publish public preview APKs (direct download links)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Publish verified APKs (direct download links)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.signing.outputs.configured == 'true' && steps.compatibility.outputs.compatible == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -88,11 +166,11 @@ jobs:
           version="$(awk '/^version: / {split($2,v,"+"); print v[1]}' pubspec.yaml)"
           test -n "$version"
           tag="janfada-v$version"
-          notes="جان فدا | وارثین $version — اصلاح فیلدهای اجباری، نمایش خطای دقیق، بازیابی رسید، تفکیک وضعیت ثبت و خروجی اکسل آفلاین. این نسخه پس از اجرای تست‌های CI ساخته می‌شود. تست تحویل پیامک و نصب روی گوشی واقعی لازم است. امضای فعلی آزمایشی است."
+          notes="جان فدا | وارثین $version — اصلاح اعتبارسنجی کد ملی، ارسال خودکار و دستی و بازیابی رسید. تطبیق شناسه بسته، نسخه و امضا با APKهای قبلی در CI انجام شده است. نصب واقعی و تحویل پیامک نیازمند آزمون میدانی است."
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag already exists; refusing to overwrite its APKs."
             exit 1
           else
-            gh release create "$tag" public-downloads/* --target "$GITHUB_SHA" --title "جان فدا | وارثین $version" --notes "$notes" --prerelease
+            gh release create "$tag" public-downloads/* --target "$GITHUB_SHA" --title "جان فدا | وارثین $version" --notes "$notes"
           fi
           gh release view "$tag" --json url,assets --jq '{url:.url,assets:[.assets[].name]}'
