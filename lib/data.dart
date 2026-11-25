@@ -176,7 +176,7 @@ class FormSync {
   FormSync(this.store);
   final LocalStore store;
   bool busy = false;
-  Future<int> pendingCount() async => (await store.all()).where((r) => r.status != 'synced').length;
+  Future<int> pendingCount() async => (await store.all()).where((r) => r.status == 'pending').length;
 
   Future<(int synced, int failed)> sync({bool retryErrors = false}) async {
     if (busy) return (0, 0);
@@ -224,7 +224,7 @@ class FormSync {
           } finally { client.close(); }
           Map<String, dynamic> decoded = {};
           try { final value = jsonDecode(body); if (value is Map<String, dynamic>) decoded = value; } catch (_) {}
-          if (response.statusCode == 401 || response.statusCode == 403) {
+          if (response.statusCode == 401) {
             await StaffAuth.instance.clearSession();
             await store.update(record.updated(status: 'error', error: 'دسترسی این شماره منقضی یا لغو شده است. دوباره با پیامک وارد شوید.'));
             failed++;
