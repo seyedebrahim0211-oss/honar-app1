@@ -170,35 +170,82 @@ class _DashboardState extends State<Dashboard> {
   List<Registrant> people = [];
   int selected = 0;
   bool syncing = false, exporting = false, online = false;
+  bool autoSync = true, _autoReady = false, _recordOpen = false;
+  static const _syncSettings = FlutterSecureStorage();
 
   @override
   void initState() {
     super.initState(); _refresh();
+    unawaited(_loadAutoSync());
     Connectivity().checkConnectivity().then(_connectivityChanged);
     internetSubscription = Connectivity().onConnectivityChanged.listen(_connectivityChanged);
-    retryTimer = Timer.periodic(const Duration(minutes: 10), (_) { if (online && !syncing) _sync(); });
+    retryTimer = Timer.periodic(const Duration(minutes: 10), (_) => _maybeAutoSync());
   }
   void _connectivityChanged(List<ConnectivityResult> options) {
     if (!mounted) return;
     final wasOnline = online;
     setState(() => online = options.any((v) => v != ConnectivityResult.none));
-    if (online && !wasOnline) _sync();
+    if (online && !wasOnline) _maybeAutoSync();
   }
   Future<void> _refresh() async { final list = await store.all(); if (mounted) setState(() => people = list); }
-  Future<void> _sync({bool retryErrors = false}) async {
-    if (syncing) return;
-    if (!online) { if (retryErrors && mounted) _info('اینترنت در دسترس نیست؛ اطلاعات و خروجی اکسل آفلاین محفوظ است.'); return; }
-    if ((await StaffAuth.instance.token() ?? '').isEmpty) {
-      if (mounted) await _phoneLogin();
-      if ((await StaffAuth.instance.token() ?? '').isEmpty) return;
+  Future<void> _loadAutoSync() async {
+    try {
+      final value = await _syncSettings.read(key: 'janfada_auto_sync');
+      if (!mounted) return;
+      setState(() { autoSync = value != 'off'; _autoReady = true; });
+      _maybeAutoSync();
+    } catch (_) {
+      if (mounted) setState(() { autoSync = false; _autoReady = true; });
     }
-    if (!mounted) return;
+  }
+  Future<void> _setAutoSync(bool value) async {
+    try {
+      await _syncSettings.write(key: 'janfada_auto_sync', value: value ? 'on' : 'off');
+      if (!mounted) return;
+      setState(() => autoSync = value);
+      if (value) _maybeAutoSync();
+    } catch (_) {
+      if (mounted) _info('ذخیره تنظیم ارسال خودکار ممکن نشد.');
+    }
+  }
+  void _maybeAutoSync() {
+    if (mounted && _autoReady && autoSync && online && !syncing && !_recordOpen) {
+      unawaited(_sync());
+    }
+  }
+  Future<void> _openRecord(Registrant record) async {
+    if (syncing || _recordOpen) return;
+    _recordOpen = true;
+    try {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) =>
+        RecordDetail(record: record, onEdited: _refresh,
+          onRetry: (id) => _sync(manual: true, recordId: id))));
+    } finally {
+      _recordOpen = false;
+      _maybeAutoSync();
+    }
+  }
+  Future<void> _sync({bool manual = false, String? recordId}) async {
+    if (!mounted || syncing) return;
+    if (!online) {
+      if (manual) _info('اینترنت در دسترس نیست؛ پرونده در گوشی محفوظ است.');
+      return;
+    }
     setState(() => syncing = true);
     try {
-      final result = await syncService.sync(retryErrors: retryErrors);
+      if ((await StaffAuth.instance.token() ?? '').isEmpty) {
+        if (manual && mounted) await _phoneLogin();
+        if ((await StaffAuth.instance.token() ?? '').isEmpty) {
+          if (manual && mounted) _info('برای ارسال به سایت، ابتدا با شماره مسئول مجاز وارد شوید.');
+          return;
+        }
+      }
+      final result = await syncService.sync(retryErrors: true,
+        recordId: recordId, retryInvalid: manual && recordId != null);
       await _refresh();
-      if (mounted && (result.$1 > 0 || result.$2 > 0)) {
-        final errors = people.where((p) => p.status == 'invalid' || p.status == 'error');
+      if (mounted && (manual || result.$1 > 0 || result.$2 > 0)) {
+        final errors = people.where((p) => (recordId == null || p.id == recordId) &&
+          (p.status == 'invalid' || p.status == 'error'));
         _info('${result.$1} ثبت قطعی؛ ${result.$2} ناموفق. ${errors.isEmpty ? '' : errors.first.error}');
       }
     } catch (_) {
@@ -231,11 +278,19 @@ class _DashboardState extends State<Dashboard> {
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('بستن')),
+          TextButton(onPressed: () => Navigator.pop(ctx, 'sync'),
+            child: const Text('ارسال مجدد پرونده‌ها')),
+          TextButton(onPressed: () => Navigator.pop(ctx, 'toggle'),
+            child: Text(autoSync ? 'غیرفعال‌کردن ارسال خودکار' : 'فعال‌کردن ارسال خودکار')),
           FilledButton.tonal(onPressed: () => Navigator.pop(ctx, 'logout'),
             child: const Text('خروج و تغییر شماره')),
         ],
       ));
-    if (action == 'logout') {
+    if (action == 'sync') {
+      await _sync(manual: true);
+    } else if (action == 'toggle') {
+      await _setAutoSync(!autoSync);
+    } else if (action == 'logout') {
       await StaffAuth.instance.logout();
       if (mounted) widget.onSignOut();
     }
@@ -299,9 +354,10 @@ class _DashboardState extends State<Dashboard> {
             ]),
           ])),
         Expanded(child: selected == 0
-          ? RegistrationForm(onSaved: () async { await _refresh(); if (online) _sync(); })
-          : RecordsView(people: people, onSync: () => _sync(retryErrors: true), syncing: syncing,
-              export: _export, exporting: exporting, onReload: () async { await _refresh(); if (online) await _sync(); })),
+          ? RegistrationForm(onSaved: () async { await _refresh(); _maybeAutoSync(); })
+          : RecordsView(people: people, onSync: () => _sync(manual: true), syncing: syncing,
+              export: _export, exporting: exporting, onOpen: _openRecord,
+              autoSync: autoSync, autoReady: _autoReady, onAutoChanged: _setAutoSync)),
       ])),
       bottomNavigationBar: NavigationBar(
         height: 74, backgroundColor: Colors.white, selectedIndex: selected,
@@ -392,8 +448,9 @@ class _RegistrationFormState extends State<RegistrationForm> {
     if (!RegExp(r'^09\d{9}$').hasMatch(_digits(controllers['mobile']!.text.trim()))) {
       _message('شماره همراه باید ۱۱ رقم و با ۰۹ آغاز شود.'); return;
     }
-    if (!nationalIdValid(_digits(controllers['nid']!.text.trim()))) {
-      _message('کد ملی ۱۰ رقمی معتبر نیست.'); return;
+    final idError = nationalIdError(controllers['nid']!.text);
+    if (idError != null) {
+      _message(idError); return;
     }
     if (!visibleValid) {
       _message('موارد مشخص‌شده در فرم را اصلاح کنید.'); return;
@@ -412,7 +469,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
     try {
       final monthNumber = birthMonth == null ? 0 : monthNames.indexOf(birthMonth!) + 1;
       final d = {
-        for (final e in controllers.entries) e.key: _digits(e.value.text.trim()),
+        for (final e in controllers.entries) e.key: e.key == 'nid' ? normalizeNationalId(e.value.text) : _digits(e.value.text.trim()),
         'birth_year': birthYear ?? '',
         'birth_month': birthMonth ?? '',
         'birth_day': birthDay ?? '',
@@ -462,18 +519,6 @@ class _RegistrationFormState extends State<RegistrationForm> {
     if (m <= 11) return 30;
     final y = int.tryParse(birthYear ?? '') ?? 1405;
     return const {1, 5, 9, 13, 17, 22, 26, 30}.contains(y % 33) ? 30 : 29;
-  }
-
-  static bool nationalIdValid(String input) {
-    if (!RegExp(r'^[0-9]{10}$').hasMatch(input) ||
-        RegExp(r'^([0-9])\1{9}$').hasMatch(input)) return false;
-    var sum = 0;
-    for (var i = 0; i < 9; i++) {
-      sum += int.parse(input[i]) * (10 - i);
-    }
-    final remainder = sum % 11;
-    final checkDigit = int.parse(input[9]);
-    return remainder < 2 ? remainder == checkDigit : 11 - remainder == checkDigit;
   }
 
   Widget choose(String label, String? current, List<String> values,
@@ -639,7 +684,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
         final v = (val ?? '').trim();
         if (required && v.isEmpty) return 'این مورد الزامی است';
         if (name == 'mobile' && !RegExp(r'^09\d{9}$').hasMatch(_digits(v))) return 'شماره همراه باید ۱۱ رقم و با ۰۹ آغاز شود';
-        if (name == 'nid' && !nationalIdValid(_digits(v))) return 'کد ملی ۱۰ رقمی معتبر نیست';
+        if (name == 'nid') return nationalIdError(v);
         return null;
       },
     ));
@@ -689,7 +734,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
               field('father_name', 'نام پدر'),
               field('mobile', 'شماره همراه *', required: true,
                 type: TextInputType.phone)),
-            field('nid', 'کد ملی *', required: true, type: TextInputType.number),
+            field('nid', 'کد ملی *', required: true, type: TextInputType.number, hint: '۱۰ رقم، با صفر ابتدایی'),
             birthDatePicker(),
           ]),
           sectionCard('تحصیل و اشتغال', Icons.school_outlined, [
@@ -792,13 +837,17 @@ class _RegistrationFormState extends State<RegistrationForm> {
 }
 
 class RecordsView extends StatefulWidget {
-  const RecordsView({super.key, required this.people, required this.onSync, required this.syncing, required this.export, required this.exporting, required this.onReload});
+  const RecordsView({super.key, required this.people, required this.onSync, required this.syncing,
+    required this.export, required this.exporting, required this.onOpen,
+    required this.autoSync, required this.autoReady, required this.onAutoChanged});
   final List<Registrant> people;
   final Future<void> Function() onSync;
   final bool syncing;
   final Future<void> Function() export;
   final bool exporting;
-  final Future<void> Function() onReload;
+  final Future<void> Function(Registrant) onOpen;
+  final bool autoSync, autoReady;
+  final Future<void> Function(bool) onAutoChanged;
   @override State<RecordsView> createState() => _RecordsViewState();
 }
 class _RecordsViewState extends State<RecordsView> {
@@ -806,6 +855,12 @@ class _RecordsViewState extends State<RecordsView> {
   @override Widget build(BuildContext context) {
     final items = widget.people.where((p) => p.name.contains(filter) || p.mobile.contains(filter) || p.code.contains(filter)).toList();
     return Column(children: [
+      SwitchListTile.adaptive(
+        title: const Text('ارسال خودکار پرونده‌ها'),
+        subtitle: const Text('پس از ثبت یا اتصال شبکه، ارسال انجام شود.'),
+        value: widget.autoSync,
+        onChanged: widget.autoReady && !widget.syncing ? widget.onAutoChanged : null,
+      ),
       Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6), child: TextField(
         onChanged: (v) => setState(() => filter = v.trim()),
         decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'جست‌وجو نام، تلفن یا کد رهگیری'),
@@ -814,7 +869,7 @@ class _RecordsViewState extends State<RecordsView> {
         Expanded(child: OutlinedButton.icon(
           onPressed: widget.syncing ? null : widget.onSync,
           icon: widget.syncing ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.sync),
-          label: const Text('همگام‌سازی'),
+          label: const Text('ارسال مجدد'),
         )),
         const SizedBox(width: 8),
         Expanded(child: FilledButton.icon(
@@ -834,7 +889,7 @@ class _RecordsViewState extends State<RecordsView> {
             subtitle: Text('${r.mobile}   •   ${r.statusLabel}${r.code.isEmpty ? '' : '\nکد: ${r.code}'}${r.error.isEmpty ? '' : '\n${r.error}'}'),
             isThreeLine: r.code.isNotEmpty || r.error.isNotEmpty,
             trailing: const Icon(Icons.chevron_left),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RecordDetail(record: r, onEdited: widget.onReload))),
+            onTap: widget.syncing ? null : () => widget.onOpen(r),
           ));
         },
       )),
@@ -843,20 +898,22 @@ class _RecordsViewState extends State<RecordsView> {
 }
 
 class RecordDetail extends StatefulWidget {
-  const RecordDetail({super.key, required this.record, required this.onEdited});
+  const RecordDetail({super.key, required this.record, required this.onEdited, required this.onRetry});
   final Registrant record;
   final Future<void> Function() onEdited;
+  final Future<void> Function(String) onRetry;
   @override State<RecordDetail> createState() => _RecordDetailState();
 }
 class _RecordDetailState extends State<RecordDetail> {
   Uint8List? photo;
+  bool retrying = false;
   @override void initState() { super.initState(); LocalStore.instance.readImage(widget.record.photo).then((p) {
     if (mounted) setState(() => photo = p);
   }).catchError((Object _) {}); }
   @override Widget build(BuildContext context) {
     final r = widget.record;
     final labels = {'first_name':'نام', 'last_name':'نام خانوادگی', 'father_name':'نام پدر', 'mobile':'شماره همراه',
-      'birth_date':'تاریخ تولد', 'city':'شهر / روستا', 'address':'نشانی', 'notes':'توضیحات'};
+      'nid':'کد ملی', 'birth_date':'تاریخ تولد', 'city':'شهر / روستا', 'address':'نشانی', 'notes':'توضیحات'};
     return Scaffold(appBar: AppBar(title: Text('پرونده ${r.name}')),
       body: ListView(padding: const EdgeInsets.all(16), children: [
         if (photo != null) ClipRRect(borderRadius: BorderRadius.circular(15), child: Image.memory(photo!, height: 230)),
@@ -867,10 +924,23 @@ class _RecordDetailState extends State<RecordDetail> {
           Text('وضعیت: ${r.statusLabel}', style: TextStyle(color: r.status == 'synced' ? green : Colors.deepOrange)),
           if (r.error.isNotEmpty) Text(r.error, style: const TextStyle(fontSize: 12, color: Colors.deepOrange)),
         ]))),
+        if (r.status != 'synced') FilledButton.icon(
+          onPressed: retrying ? null : () async {
+            setState(() => retrying = true);
+            try {
+              await widget.onRetry(r.id);
+              if (context.mounted) Navigator.pop(context);
+            } finally {
+              if (mounted) setState(() => retrying = false);
+            }
+          },
+          icon: const Icon(Icons.cloud_upload_outlined),
+          label: Text(retrying ? 'در حال بررسی و ارسال…' : 'ارسال دستی / ارسال مجدد این پرونده'),
+        ),
         if (r.status != 'synced') Padding(padding: const EdgeInsets.symmetric(vertical: 8),
           child: FilledButton.icon(
             icon: const Icon(Icons.edit_outlined), label: const Text('ویرایش پرونده آفلاین'),
-            onPressed: () async {
+            onPressed: retrying ? null : () async {
               await Navigator.push(context, MaterialPageRoute(builder: (editContext) => Scaffold(
                 appBar: AppBar(title: const Text('ویرایش پرونده آفلاین')),
                 body: RegistrationForm(initial: r, onSaved: () async {
