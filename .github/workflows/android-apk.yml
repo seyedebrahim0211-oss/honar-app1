@@ -109,6 +109,11 @@ jobs:
           JANFADA_KEY_ALIAS: ${{ secrets.JANFADA_KEY_ALIAS }}
           JANFADA_KEY_PASSWORD: ${{ secrets.JANFADA_KEY_PASSWORD }}
         run: flutter build apk --release --split-per-abi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: janfada-android-optimized-apks
+          path: build/app/outputs/flutter-apk/app-*-release.apk
+          retention-days: 30
       - name: Verify APK signatures and upgrade compatibility
         id: compatibility
         env:
@@ -127,10 +132,23 @@ jobs:
           import os, re, subprocess
           from pathlib import Path
           def identity(path):
-              cert = subprocess.check_output([os.environ['SIGNER'], 'verify', '--print-certs', str(path)], text=True)
-              hashes = sorted(re.findall(r'Signer #\d+ certificate SHA-256 digest:\s*([0-9a-fA-F]+)', cert))
+              result = subprocess.run([os.environ['SIGNER'], 'verify', '--verbose', '--print-certs', str(path)], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+              print('APK verification:', path, flush=True)
+              print(result.stdout, flush=True)
+              if result.returncode != 0:
+                  raise RuntimeError('Cryptographic verification failed: ' + str(path))
+              # Build-tools versions differ: numbered signers, SDK-ranged signers,
+              # and V3/V3.1 signer labels. Never match public-key or source-stamp hashes.
+              hashes = set()
+              for line in result.stdout.splitlines():
+                  match = re.fullmatch(r'\s*(?:V[0-9]+(?:\.[0-9]+)?\s+)?Signer\b[^\r\n]*?\bcertificate SHA-256 digest\s*:\s*([0-9a-fA-F:]+)\s*', line, re.IGNORECASE)
+                  if match:
+                      digest = match.group(1).replace(':', '').lower()
+                      if re.fullmatch(r'[0-9a-f]{64}', digest):
+                          hashes.add(digest)
               if not hashes:
-                  raise RuntimeError('No verified signer: ' + str(path))
+                  raise RuntimeError('APK verifies but no supported signer certificate SHA-256 was found; inspect the verification output above: ' + str(path))
+              hashes = sorted(hashes)
               badging = subprocess.check_output([os.environ['AAPT'], 'dump', 'badging', str(path)], text=True)
               pkg, version = re.search(r"package: name='([^']+)' versionCode='(\d+)'", badging).groups()
               print(path.name, pkg, version, ','.join(hashes))
@@ -146,11 +164,6 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
               out.write('compatible=' + str(compatible).lower() + '\n')
           PY
-      - uses: actions/upload-artifact@v4
-        with:
-          name: janfada-android-optimized-apks
-          path: build/app/outputs/flutter-apk/app-*-release.apk
-          retention-days: 30
 
       - name: Publish verified APKs (direct download links)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.signing.outputs.configured == 'true' && steps.compatibility.outputs.compatible == 'true'
