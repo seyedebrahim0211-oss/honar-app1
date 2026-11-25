@@ -1,0 +1,45 @@
+name: JanFada 1.3.4 preview publication
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/janfada-134-preview.yml']
+permissions:
+  actions: read
+  contents: write
+jobs:
+  publish-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish previously verified build as fresh-install preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run=45577223258
+          sha=bb16c9ca69b7c1685de154c65bd74fe7fdbcac2f
+          test "$(gh run view "$run" --json conclusion --jq .conclusion)" = success
+          test "$(gh run view "$run" --json headSha --jq .headSha)" = "$sha"
+          tag=janfada-v1.3.4-preview
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Preview already exists; will not overwrite."
+            exit 0
+          fi
+          gh run download "$run" -n janfada-android-optimized-apks --dir built
+          mkdir -p public-downloads
+          cp built/app-arm64-v8a-release.apk public-downloads/JanFada-Android-ARM64.apk
+          cp built/app-armeabi-v7a-release.apk public-downloads/JanFada-Android-ARM32.apk
+          signer="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n1)"
+          aapt="$(dirname "$signer")/aapt"
+          for apk in public-downloads/*.apk; do
+            "$signer" verify --verbose --print-certs "$apk" > "$apk.verification"
+            grep -Fi 'aa62f0d1887948f757016654c094f4bd62f07a263004b2e951ace67b8468267c' "$apk.verification"
+            "$aapt" dump badging "$apk" | head -n1 > "$apk.package"
+            grep -F "package: name='ir.honarmardomi.jan_fada'" "$apk.package"
+            grep -F "versionName='1.3.4'" "$apk.package"
+            rm "$apk.verification" "$apk.package"
+          done
+          (cd public-downloads && sha256sum *.apk > SHA256SUMS.txt)
+          gh release create "$tag" public-downloads/* --target "$sha" --prerelease --title "جان‌فدا ۱.۳.۴ — پیش‌نمایش نصب جدید" --notes "نسخه آزمایشی برای نصب جدید روی گوشی فاقد نسخه قبلی. امضای APK با نسخه‌های ۱.۳.۲ و ۱.۳.۳ متفاوت است. روی نسخه قبلی قابل به‌روزرسانی نیست؛ برای حفظ پرونده‌های آفلاین، اپ قبلی را حذف نکنید. تحویل پیامک و نصب میدانی هنوز تأیید نشده‌اند. انتشار نهایی همچنان مشروط به امضای ثابت است."
+          gh release view "$tag" --json url,assets --jq '{url:.url,assets:[.assets[].name]}'
